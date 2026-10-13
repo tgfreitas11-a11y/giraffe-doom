@@ -1,0 +1,7 @@
+{
+  "appId": "com.giraffedoom.jogo",
+  "appName": "Giraffe Doom",
+  "webDir": "www",
+  "backgroundColor": "#140c09",
+  "android": { "backgroundColor": "#140c09" }
+}
