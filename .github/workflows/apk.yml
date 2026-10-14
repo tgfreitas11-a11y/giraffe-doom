@@ -33,7 +33,8 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee ../build.log
 
       - name: Publicar o APK em "Releases"
         env:
@@ -44,3 +45,12 @@ jobs:
           gh release create ultima GiraffeDoom.apk \
             --title "Giraffe Doom (última versão)" \
             --notes "Toque em GiraffeDoom.apk no celular para baixar e instalar."
+
+      - name: Guardar o registro do erro
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tail -n 200 build.log > erro-compilacao.txt || echo "sem registro" > erro-compilacao.txt
+          gh release delete erro --yes --cleanup-tag || true
+          gh release create erro erro-compilacao.txt --prerelease --title "Erro na última compilação" --notes "Registro do erro"
