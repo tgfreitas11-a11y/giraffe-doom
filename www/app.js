@@ -1059,6 +1059,7 @@
   Object.assign(SETUP_I18N.en, { create: 'Create online room', codeLbl: 'Room code', codePh: 'e.g. GZ7K2', enter: 'Join', notFound: 'Room not found. Check the code.', invalid: 'Type the code the host gave you.', netErr: 'Can’t reach the game server. Check your internet and try again.', roomLbl: 'Room', leaveRoom: 'leave room' });
   Object.assign(SETUP_I18N.fr, { create: 'Créer une salle en ligne', codeLbl: 'Code de la salle', codePh: 'ex. GZ7K2', enter: 'Entrer', notFound: 'Salle introuvable. Vérifie le code.', invalid: 'Tape le code donné par l’hôte.', netErr: 'Impossible de joindre le serveur du jeu. Vérifie ta connexion et réessaie.', roomLbl: 'Salle', leaveRoom: 'quitter la salle' });
   Object.assign(SETUP_I18N.es, { create: 'Crear sala en línea', codeLbl: 'Código de la sala', codePh: 'Ej.: GZ7K2', enter: 'Entrar', notFound: 'Sala no encontrada. Revisa el código.', invalid: 'Escribe el código que te pasó el anfitrión.', netErr: 'No hay conexión con el servidor del juego. Revisa internet e inténtalo de nuevo.', roomLbl: 'Sala', leaveRoom: 'salir de la sala' });
+  const iosHint = () => { try { const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); return ios && !navigator.standalone && !window.Capacitor; } catch (e) { return false; } };
   const tS = k => (SETUP_I18N[splashLang()] || SETUP_I18N.pt)[k];
   function requireNick() {
     if (nickOk()) return true;
@@ -1077,6 +1078,7 @@
         <h1 class="brand"><img src="img/logo.webp" alt="Giraffe Doom: The Neck Extension Trap Game"></h1>
         <div class="heroes">${heroes.map((h, i) => `<div class="card hero" style="background-image:url(img/${h}.webp);animation-delay:${i * 90}ms"></div>`).join('')}</div>
         <p class="lede">${tS('lede')}</p>
+        ${iosHint() ? `<p class="note">📲 <b>No iPhone:</b> toque em <b>Compartilhar</b> (o quadrado com a seta) e depois em <b>Adicionar à Tela de Início</b> para instalar o jogo.</p>` : ''}
         ${saved && saved.winner === null ? `<button class="btn" id="resume"><span>${tS('resume')}</span><small>${tS('round')} ${Math.ceil(saved.turnNo / saved.players.length)}</small></button>` : ''}
         <div class="field"><label for="pname">${tS('nick')}</label><input id="pname" maxlength="16" autocomplete="nickname" placeholder="${tS('ph')}" value="${nickOk() ? esc(prefs.name) : ''}" aria-describedby="nickerr"><p class="fielderr" id="nickerr" hidden></p></div>
         <div class="field"><label>${tS('bots')}</label>

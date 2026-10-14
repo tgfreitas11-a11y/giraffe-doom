@@ -2,6 +2,13 @@
 
 <title>Giraffe Doom</title>
 <meta name="theme-color" content="#140c09">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Giraffe Doom">
 <style>
 @font-face{font-family:"Michroma";font-weight:400;font-display:swap;src:url(fonts/michroma-latin-400-normal.woff2) format("woff2")}
 @font-face{font-family:"Barlow Semi Condensed";font-weight:400;font-display:swap;src:url(fonts/barlow-semi-condensed-latin-400-normal.woff2) format("woff2")}
@@ -481,6 +488,12 @@ body[data-screen="setup"] .app { position: relative; z-index: 1; }
 <script src="vendor/firebase-database-compat.js"></script>
 <script src="net-firebase.js" charset="utf-8"></script>
 <script src="app.js" charset="utf-8"></script>
+<script>
+// site instalável (iPhone/navegador); no app Android não precisa
+if ('serviceWorker' in navigator && !window.Capacitor && location.protocol === 'https:') {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
 
 
 </body></html>
