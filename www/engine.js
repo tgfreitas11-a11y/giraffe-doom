@@ -537,11 +537,15 @@
         const nk = (g.id === params.gid && params.piece && g.necks.includes(params.piece)) ? params.piece : g.necks[g.necks.length - 1];
         g.necks.splice(g.necks.indexOf(nk), 1); delete st.dmg[nk]; if (st.wounds) delete st.wounds[nk]; dropPoisons(st, t, po => po.piece === nk);
         const fromGid = g.id;
-        const dest = p.giraffes.find(x => x.id === params.toGid && !x.special && x.necks.length < MAX_NECKS)
-          || p.giraffes.filter(x => !x.special && x.necks.length < MAX_NECKS).sort((a, b) => b.necks.length - a.necks.length)[0];
-        ev(st, { t: 'steal', from: t.idx, fromGid, to: pid, toGid: dest ? dest.id : null, card: nk });
-        if (dest) { dest.necks.push(nk); log(st, `🪝 ${p.name} roubou ${name(nk)} de ${t.name} e encaixou em ${name(dest.special || dest.head)}.`); }
-        else { p.hand.push(nk); log(st, `🪝 ${p.name} roubou ${name(nk)} de ${t.name} (foi para a mão).`); }
+        const dests = stealDests(p);
+        const chosen = dests.find(x => x.id === params.toGid);
+        // quem rouba escolhe onde encaixar; se a escolha ainda não foi feita (ex.: roubo devolvido) e há mais de uma opção, pergunta
+        if (!chosen && dests.length > 1) {
+          st.pending = { type: 'stealdest', pid, card: nk, from: t.idx, fromGid };
+          log(st, `🪝 ${p.name} roubou ${name(nk)} de ${t.name} e está escolhendo onde encaixar.`);
+          break;
+        }
+        placeStolen(st, pid, nk, t.idx, fromGid, chosen || dests[0] || null);
         break;
       }
       case 'sleep': {
@@ -587,6 +591,26 @@
         break;
       }
     }
+  }
+  // girafas que podem receber um pescoço roubado
+  function stealDests(p) { return p.giraffes.filter(x => !x.special && x.necks.length < MAX_NECKS); }
+  function placeStolen(st, pid, nk, from, fromGid, dest) {
+    const p = st.players[pid], t = st.players[from];
+    ev(st, { t: 'steal', from, fromGid, to: pid, toGid: dest ? dest.id : null, card: nk });
+    if (dest) { dest.necks.push(nk); log(st, `🪝 ${p.name} roubou ${name(nk)} de ${t.name} e encaixou em ${name(dest.special || dest.head)}.`); }
+    else { p.hand.push(nk); log(st, `🪝 ${p.name} roubou ${name(nk)} de ${t.name} (sem girafa para receber, foi para a mão).`); }
+  }
+  function chooseStealDest(st, pid, gid) {
+    const pd = st.pending;
+    if (!pd || pd.type !== 'stealdest' || pd.pid !== pid) return err('Nada para escolher.');
+    const dests = stealDests(st.players[pid]);
+    const dest = dests.find(x => x.id === gid);
+    if (!dest && dests.length) return err('Escolha uma girafa sua que possa receber o pescoço.');
+    st.pending = null;
+    placeStolen(st, pid, pd.card, pd.from, pd.fromGid, dest || null);
+    checkObjectives(st, st.turn);
+    if (st.mustEndTurnNow && !st.pending) { st.mustEndTurnNow = false; if (st.winner === null) endTurn(st); }
+    return { ok: true };
   }
   function chooseDestiny(st, pid, idx) {
     const pd = st.pending;
@@ -675,7 +699,7 @@
   }
 
   const API = {
-    CARDS, OBJ, HAND_LIMIT, MAX_NECKS, COLOR_PT, pieceOf, discardPairs, portalPartner, objOptions, chooseObjective, newGame, validate, play, respond, chooseDestiny, draw,
+    CARDS, OBJ, HAND_LIMIT, MAX_NECKS, COLOR_PT, pieceOf, discardPairs, portalPartner, objOptions, chooseObjective, newGame, validate, play, respond, chooseDestiny, chooseStealDest, stealDests, draw,
     discardExcess, canTakeBody, canAttack, eligibleReactions, whoActs, topPiece, score, canBuild, targetable, biggest, rand,
   };
   root.GD_ENGINE = API;

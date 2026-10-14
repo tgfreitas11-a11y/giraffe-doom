@@ -79,6 +79,10 @@
       const sc = pd.options.map(id => K(id) === 'bomb' ? -99 : cardValue(st, p, id));
       return E.chooseDestiny(st, pid, sc.indexOf(Math.max(...sc)));
     }
+    if (pd && pd.type === 'stealdest') {
+      const d = E.stealDests(p).sort((a, b) => b.necks.length - a.necks.length)[0];
+      return E.chooseStealDest(st, pid, d ? d.id : null);
+    }
     if (pd && pd.type === 'handlimit') {
       const ids = p.hand.slice().sort((a, b) => cardValue(st, p, a) - cardValue(st, p, b)).slice(0, pd.n);
       return E.discardExcess(st, pid, ids);

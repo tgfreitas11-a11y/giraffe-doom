@@ -163,7 +163,7 @@
         if (NET.mode === 'online' && !NET.isHost) break; // só o anfitrião move os bots
         if (NET.mode === 'online') { const ok = await waitPlayersCaughtUp(); if (!ok) continue; }
         // bot pensando, como um adversário de verdade
-        ui.thinking = w; ui.status = st.pending ? `${P(w).name} está decidindo se reage…` : `${P(w).name} está pensando…`;
+        ui.thinking = w; ui.status = st.pending && st.pending.type === 'react' ? `${P(w).name} está decidindo se reage…` : st.pending && st.pending.type === 'stealdest' ? `${P(w).name} está escolhendo onde encaixar o pescoço roubado…` : `${P(w).name} está pensando…`;
         render();
         const isReact = st.pending && st.pending.type === 'react';
         const firstAct = ui.lastActTurn !== st.turnNo; ui.lastActTurn = st.turnNo;
@@ -186,6 +186,7 @@
       case 'play': return E.play(S, seat, a.cid, a.p || {});
       case 'respond': return E.respond(S, seat, a.cid || null);
       case 'destiny': return E.chooseDestiny(S, seat, a.i);
+      case 'sd': return E.chooseStealDest(S, seat, a.gid || null);
       case 'draw': return E.draw(S, seat, a.src);
       case 'hl': return E.discardExcess(S, seat, a.ids);
       case 'objpick': return E.chooseObjective(S, seat, a.i);
@@ -1248,7 +1249,7 @@
   function cleanSheets() {
     const s = ui.sheet; if (!s) return;
     const pd = st && st.pending;
-    if (['react', 'destiny', 'handlimit'].includes(s.type) && !(pd && E.whoActs(st) === ME && (pd.type === s.type || (s.type === 'react' && pd.type === 'react')))) ui.sheet = null;
+    if (['react', 'destiny', 'handlimit', 'stealdest'].includes(s.type) && !(pd && E.whoActs(st) === ME && (pd.type === s.type || (s.type === 'react' && pd.type === 'react')))) ui.sheet = null;
     if (s.type === 'card' && !P(ME).hand.includes(s.cid)) ui.sheet = null;
     if (s.type === 'objpick' && !(P(ME).objOwed > 0)) ui.sheet = null;
   }
@@ -1260,14 +1261,14 @@
       const t = pd.type === 'react' ? 'react' : pd.type;
       if (!ui.sheet || ui.sheet.type !== t) ui.sheet = { type: t, sel: [] };
     } else {
-      if (ui.sheet && ['react', 'destiny', 'handlimit'].includes(ui.sheet.type)) ui.sheet = null;
+      if (ui.sheet && ['react', 'destiny', 'handlimit', 'stealdest'].includes(ui.sheet.type)) ui.sheet = null;
       if (P(ME).objOwed > 0 && (!ui.sheet || ui.sheet.type !== 'objpick')) ui.sheet = { type: 'objpick' };
     }
   }
 
   // ---------- folhas ----------
   function openSheet(s) { ui.sheet = s; renderSheet(); }
-  function closeSheet() { if (['react', 'destiny', 'handlimit', 'over', 'objpick'].includes(ui.sheet && ui.sheet.type)) return; ui.sheet = null; renderSheet(); }
+  function closeSheet() { if (['react', 'destiny', 'handlimit', 'stealdest', 'over', 'objpick'].includes(ui.sheet && ui.sheet.type)) return; ui.sheet = null; renderSheet(); }
   function renderSheet() {
     let sc = document.querySelector('.scrim');
     if (!ui.sheet) { if (sc) sc.remove(); return; }
@@ -1356,6 +1357,13 @@
         const pd = st.pending; if (!pd || pd.type !== 'destiny') return closeBtn;
         return `<span class="kind">Destino</span><h2>Escolha uma carta</h2><p>A outra volta para o topo do monte. Destino substitui a compra: seu turno termina depois da escolha.</p>
           <div class="grid-cards two">${pd.options.map((id, i) => `<button class="card" data-destiny="${i}" style="background-image:url(${img(id)})"><span class="tag">${K(id) === 'bomb' ? '💣 bomba!' : esc(NM(id))}</span></button>`).join('')}</div>`;
+      }
+      case 'stealdest': {
+        const pd = st.pending; if (!pd || pd.type !== 'stealdest') return closeBtn;
+        const dests = E.stealDests(me);
+        return `<span class="kind">Missão Pescoço</span><h2>Onde encaixar o pescoço?</h2><p>Você roubou <b>${esc(NM(pd.card))}</b> de ${esc(P(pd.from).name)}. Escolha em qual girafa sua ele entra.</p>
+          <div class="card" style="background-image:url(${img(pd.card)});justify-self:center;--card-w:110px"></div>
+          <div class="btns">${me.giraffes.map(g => { const ok = dests.includes(g); return `<button class="btn ${ok ? '' : 'ghost'}" data-sd="${g.id}" ${ok ? '' : 'disabled'}><span>${esc(NM(g.special || g.head))}</span><small>${g.special ? 'girafa inteira, sem pescoço' : g.necks.length >= E.MAX_NECKS ? 'já tem 5 pescoços' : `nível ${g.necks.length} → ${g.necks.length + 1}`}</small></button>`; }).join('')}</div>`;
       }
       case 'handlimit': {
         const pd = st.pending; if (!pd || pd.type !== 'handlimit') return closeBtn; s.sel = s.sel || [];
@@ -1521,6 +1529,7 @@
     on('[data-pair]', b => play({ pair: JSON.parse(b.dataset.pair) }));
     on('[data-react]', b => act({ t: 'respond', cid: b.dataset.react || null }));
     on('[data-destiny]', b => act({ t: 'destiny', i: +b.dataset.destiny }));
+    on('[data-sd]', b => act({ t: 'sd', gid: b.dataset.sd }));
     on('[data-objpick]', b => act({ t: 'objpick', i: +b.dataset.objpick }));
     on('[data-hl]', b => { const id = b.dataset.hl; s.sel = s.sel.includes(id) ? s.sel.filter(x => x !== id) : s.sel.concat(id).slice(-st.pending.n); renderSheet(); });
   }
