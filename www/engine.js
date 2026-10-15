@@ -36,17 +36,19 @@
       pending: null, winner: null, log: [], gidSeq: 1, mustEndTurn: false,
     };
     const n = st.players.length;
+    const P = pilesFor(st, n);
+    st.half = n <= 4;
     st.objDeck = shuffle(st, OBJ.map((_, i) => i));
     st.players.forEach(p => { p.objectives = [st.objDeck.pop(), st.objDeck.pop()]; });
-    st.bodyDeck = shuffle(st, PILES.bodies.slice());
+    st.bodyDeck = shuffle(st, P.bodies.slice());
     st.market = [st.bodyDeck.pop(), st.bodyDeck.pop(), st.bodyDeck.pop()];
-    const heads = shuffle(st, PILES.heads.concat(PILES.specials));
+    const heads = shuffle(st, P.heads.concat(P.specials));
     st.players.forEach(p => p.hand.push(heads.pop(), heads.pop(), heads.pop()));
-    const main = shuffle(st, PILES.main.concat(heads));
+    const main = shuffle(st, P.main.concat(heads));
     st.players.forEach(p => { for (let k = 0; k < 4; k++) p.hand.push(main.pop()); });
     // Campo minado: bombas embaralhadas na metade de baixo do monte
     const half = Math.floor(main.length / 2);
-    const bottom = shuffle(st, main.slice(0, half).concat(PILES.bombs));
+    const bottom = shuffle(st, main.slice(0, half).concat(P.bombs));
     st.deck = bottom.concat(main.slice(half)); // topo = fim do array
     st.turn = Math.floor(rand(st) * n);
     log(st, `🦒 Partida começou! ${st.players[st.turn].name} joga primeiro.`);
@@ -54,6 +56,20 @@
     return st;
   }
 
+  // até 4 jogadores: metade das cartas, sorteada a cada partida.
+  // Cada cabeça vem com o seu corpo, e cada tipo de carta é dividido ao meio
+  // (pescoços por cor, ataques por dano, sono por turnos) para o jogo continuar equilibrado.
+  function pilesFor(st, n) {
+    if (n > 4) return PILES;
+    const halfOf = arr => shuffle(st, arr.slice()).slice(0, Math.ceil(arr.length / 2));
+    const heads = halfOf(PILES.heads);
+    const keep = new Set(heads.map(h => card(h).match));
+    const bodies = PILES.bodies.filter(b => keep.has(card(b).match));
+    const groups = {};
+    PILES.main.forEach(id => { const c = card(id); const k = c.kind + (c.kind === 'neck' ? c.color : c.kind === 'attack' ? c.dmg : c.kind === 'sleep' ? c.turns : ''); (groups[k] = groups[k] || []).push(id); });
+    const main = [].concat(...Object.keys(groups).sort().map(k => halfOf(groups[k])));
+    return { heads, bodies, specials: halfOf(PILES.specials), main, bombs: halfOf(PILES.bombs) };
+  }
   function log(st, msg) { st.log.push(msg); if (st.log.length > 100) st.log.shift(); }
   // eventos estruturados para a interface animar
   function ev(st, e) { st.events = st.events || []; st.evSeq = (st.evSeq || 0) + 1; e.seq = st.evSeq; st.events.push(e); if (st.events.length > 150) st.events.shift(); }
