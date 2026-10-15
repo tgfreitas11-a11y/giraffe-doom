@@ -144,6 +144,35 @@
   function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
 
   // ---------- fluxo principal ----------
+  // ---------- espera por outro jogador (online) ----------
+  // mostra quem está decidindo e há quanto tempo; a janela de reação fecha sozinha depois de REACT_LIMIT
+  const REACT_LIMIT = 40;
+  let waitKey = null, waitSince = 0;
+  const $wait = document.createElement('div'); $wait.className = 'waitpill'; $wait.hidden = true; document.body.appendChild($wait);
+  function waitTick() {
+    const live = st && ui.view === 'game' && st.winner === null && st.pending;
+    const w = live ? E.whoActs(st) : null;
+    if (!live || w === null || w === undefined) { $wait.hidden = true; waitKey = null; return; }
+    const pd = st.pending;
+    const key = [st.turnNo, pd.type, w, pd.stack ? pd.stack.length : 0, st.evSeq || 0].join('|');
+    if (key !== waitKey) { waitKey = key; waitSince = Date.now(); }
+    const secs = Math.floor((Date.now() - waitSince) / 1000);
+    const left = Math.max(0, REACT_LIMIT - secs);
+    // quem decide vê a contagem na janela de reação
+    document.querySelectorAll('[data-reacttimer]').forEach(el => { el.textContent = pd.type === 'react' ? `⏱️ ${left}s para decidir — depois a jogada passa sozinha.` : ''; });
+    // o anfitrião fecha a janela de reação de quem não responde a tempo (inclusive a dele)
+    if (NET.mode === 'online' && NET.isHost && pd.type === 'react' && !P(w).isBot && secs >= REACT_LIMIT && !pumping && !NET.queue.length) {
+      snap = clone(st);
+      const r = E.respond(st, w, null);
+      if (r && r.ok) { st.log.push(`⏱️ ${P(w).name} não respondeu a tempo: a jogada seguiu.`); ui.sheet = null; renderSheet(); pushState(); pump(); }
+      return;
+    }
+    if (w === ME || P(w).isBot) { $wait.hidden = true; return; }
+    const what = pd.type === 'react' ? 'decidir se reage' : pd.type === 'stealdest' ? 'escolher onde encaixar o pescoço' : pd.type === 'reflect' ? 'escolher onde a defesa revida' : pd.type === 'destiny' ? 'escolher a carta do Destino' : 'decidir';
+    $wait.hidden = false;
+    $wait.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> Esperando <b>${esc(P(w).name)}</b> ${what}… ${pd.type === 'react' && NET.mode === 'online' ? `<small>${left}s</small>` : `<small>${secs}s</small>`}`;
+  }
+  setInterval(waitTick, 500);
   async function pump() {
     if (pumping) return; pumping = true; ui.busy = true;
     try {
@@ -1373,7 +1402,7 @@
         const what = pd.stack.length === 1
           ? `${esc(P(e0.pid).name)} jogou <b>${esc(NM(e0.card))}</b>${e0.target === ME ? ' em <b>você</b>' : e0.target != null ? ' em ' + esc(P(e0.target).name) : ''}.`
           : `${esc(P(top.pid).name)} reagiu com <b>${esc(NM(top.card))}</b> contra ${pd.stack[pd.stack.length - 2].pid === ME ? 'a <b>sua</b> jogada' : 'a jogada de ' + esc(P(pd.stack[pd.stack.length - 2].pid).name)}.`;
-        return `<span class="kind">Reação</span><h2>Quer responder?</h2><p>${what}</p>
+        return `<span class="kind">Reação</span><h2>Quer responder?</h2><p>${what}</p>${NET.mode === 'online' ? `<p class="note" data-reacttimer></p>` : ''}
           <div class="btns">${opts.map(id => `<button class="btn" data-react="${id}"><span>Usar ${esc(NM(id))}</span><small>${C.KIND_LABEL[K(id)]}</small></button>`).join('')}
           <button class="btn ghost" data-react=""><span>Deixar passar</span></button></div>`;
       }
