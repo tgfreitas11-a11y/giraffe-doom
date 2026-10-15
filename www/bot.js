@@ -62,7 +62,7 @@
     let best = null;
     for (const n of necks) for (const g of p.giraffes) {
       if (g.special || g.necks.length >= E.MAX_NECKS) continue;
-      const gs = p.giraffes.map(x => ({ necks: x.necks.map(id => E.CARDS[id].color).concat(x === g ? [E.CARDS[n].color] : []) }));
+      const gs = p.giraffes.map(x => ({ special: !!x.special, necks: x.necks.map(id => E.CARDS[id].color).concat(x === g ? [E.CARDS[n].color] : []) }));
       let sc = g.necks.length * 2 + E.CARDS[n].def;
       for (const o of p.objectives) if (E.OBJ[o].check(gs, { maxHitsOnOne: 0 })) sc += 100 + E.OBJ[o].pts;
       if (!best || sc > best.sc) best = { sc, n, g };
@@ -78,6 +78,14 @@
     if (pd && pd.type === 'destiny') {
       const sc = pd.options.map(id => K(id) === 'bomb' ? -99 : cardValue(st, p, id));
       return E.chooseDestiny(st, pid, sc.indexOf(Math.max(...sc)));
+    }
+    if (pd && pd.type === 'reflect') {
+      // revide: cabeça exposta que cai > pescoço mais forte > o que der
+      const opts = E.reflectOptions(st, pd.card, pd.target);
+      const k = K(pd.card), dmg = E.CARDS[pd.card].dmg || 1;
+      const sc = o => { const c = E.CARDS[o.piece]; const need = c.def - (st.dmg[o.piece] || 0); return (k === 'attack' && need <= dmg ? 100 : 0) + (c.kind === 'neck' ? c.def * 10 : 5); };
+      const best = opts.slice().sort((a, b) => sc(b) - sc(a))[0];
+      return E.chooseReflect(st, pid, best.gid, best.piece);
     }
     if (pd && pd.type === 'stealdest') {
       const d = E.stealDests(p).sort((a, b) => b.necks.length - a.necks.length)[0];
@@ -182,7 +190,7 @@
     // compra
     const unpaired = p.hand.some(h => K(h) === 'head' && !p.hand.some(b => K(b) === 'body' && PAIRS(E.CARDS[h], E.CARDS[b])));
     const mi = unpaired ? st.market.findIndex(b => b && E.canTakeBody(st, pid, b) && p.hand.some(h => K(h) === 'head' && !p.hand.some(x => K(x) === 'body' && PAIRS(E.CARDS[h], E.CARDS[x])) && PAIRS(E.CARDS[h], E.CARDS[b]))) : -1;
-    return E.draw(st, pid, mi >= 0 ? mi : 'deck');
+    return E.draw(st, pid, mi >= 0 ? mi : st.objBought ? 'pass' : 'deck');
   }
 
   const API = { step };

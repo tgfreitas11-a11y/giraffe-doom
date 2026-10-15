@@ -163,7 +163,7 @@
         if (NET.mode === 'online' && !NET.isHost) break; // só o anfitrião move os bots
         if (NET.mode === 'online') { const ok = await waitPlayersCaughtUp(); if (!ok) continue; }
         // bot pensando, como um adversário de verdade
-        ui.thinking = w; ui.status = st.pending && st.pending.type === 'react' ? `${P(w).name} está decidindo se reage…` : st.pending && st.pending.type === 'stealdest' ? `${P(w).name} está escolhendo onde encaixar o pescoço roubado…` : `${P(w).name} está pensando…`;
+        ui.thinking = w; ui.status = st.pending && st.pending.type === 'react' ? `${P(w).name} está decidindo se reage…` : st.pending && st.pending.type === 'stealdest' ? `${P(w).name} está escolhendo onde encaixar o pescoço roubado…` : st.pending && st.pending.type === 'reflect' ? `${P(w).name} está escolhendo onde a defesa revida…` : `${P(w).name} está pensando…`;
         render();
         const isReact = st.pending && st.pending.type === 'react';
         const firstAct = ui.lastActTurn !== st.turnNo; ui.lastActTurn = st.turnNo;
@@ -171,7 +171,7 @@
         ui.thinking = null;
         snap = clone(st);
         const r = B.step(st, w);
-        if (r && r.ok === false) E.draw(st, st.turn, 'deck');
+        if (r && r.ok === false) E.draw(st, st.turn, st.objBought ? 'pass' : 'deck');
         ui.status = '';
         save(); if (NET.isHost) pushState();
       }
@@ -187,6 +187,7 @@
       case 'respond': return E.respond(S, seat, a.cid || null);
       case 'destiny': return E.chooseDestiny(S, seat, a.i);
       case 'sd': return E.chooseStealDest(S, seat, a.gid || null);
+      case 'rf': return E.chooseReflect(S, seat, a.gid, a.piece);
       case 'draw': return E.draw(S, seat, a.src);
       case 'hl': return E.discardExcess(S, seat, a.ids);
       case 'objpick': return E.chooseObjective(S, seat, a.i);
@@ -533,11 +534,11 @@
       } else {
         const from = rectOf($app.querySelector(`[data-market="${e.idx}"]`));
         V.market = V.market.slice(); V.market[e.idx] = null; render();
-        narr(`${who(e.pid)} pegou o corpo de <b>${esc(NM(e.card))}</b> da vitrine (tem a cabeça dessa girafa na mão) e encerrou o turno. Uma nova carta entrou na vitrine.`, '🛒');
-        await spotlight(e.card, `${who(e.pid)} pegou o corpo de <b>${esc(NM(e.card))}</b> da vitrine<div class="expl">${e.pid === ME ? 'Você' : 'Ele'} tem a cabeça dessa girafa na mão e pode baixá-la no próximo turno.</div>`, from, dst, { label: 'Corpo · vitrine' });
+        narr(`${who(e.pid)} pegou o corpo de <b>${esc(NM(e.card))}</b> da vitrine e encerrou o turno. Uma nova carta entrou na vitrine.`, '🛒');
+        await spotlight(e.card, `${who(e.pid)} pegou o corpo de <b>${esc(NM(e.card))}</b> da vitrine`, from, dst, { label: 'Corpo · vitrine' });
         V.market[e.idx] = st.market[e.idx];
         addToHand(e.pid, e.card); render();
-        if (V.market[e.idx]) { const nm = V.market[e.idx]; await spotlight(nm, `Novo corpo na vitrine: <b>${esc(NM(nm))}</b><div class="expl">Quem tiver a cabeça de ${esc(NM(nm))} na mão pode pegá-lo como compra.</div>`, deckRect(), rectOf($app.querySelector(`[data-market="${e.idx}"]`)), { label: 'Vitrine', flip: true }); }
+        if (V.market[e.idx]) { const nm = V.market[e.idx]; await spotlight(nm, `Novo corpo na vitrine: <b>${esc(NM(nm))}</b><div class="expl">Qualquer jogador pode pegá-lo como compra.</div>`, deckRect(), rectOf($app.querySelector(`[data-market="${e.idx}"]`)), { label: 'Vitrine', flip: true }); }
       }
     },
     async bomb(e) {
@@ -1128,7 +1129,7 @@
       <div class="piece head" data-piece="${headId}" style="background-image:url(${img(headId)})">${hurt(headId)}${venom(headId)}</div>
       ${necks.map(n => `<div class="piece neck ${en.piece === n ? 'enter-n' : ''}" data-piece="${n}" style="background-image:url(${img(n)});--ico:url(img/c_${E.CARDS[n].color}.webp)" title="${esc(NM(n))}">${hurt(n)}${venom(n)}</div>`).join('')}
       ${g.body ? `<div class="piece body" data-piece="${g.body}" style="background-image:url(${img(g.body)})"></div>` : ''}
-      <div class="cap"><b>${esc(NM(headId))}</b>${g.special ? 'inteira' : 'nível ' + g.necks.length} ${dicons(top.def, dmg, 'inl')}</div>
+      <div class="cap"><b>${esc(NM(headId))}</b>${g.special ? 'nível 1' : 'nível ' + g.necks.length} ${dicons(top.def, dmg, 'inl')}</div>
     </div>`;
   }
   function herdHTML(S, p) {
@@ -1152,7 +1153,7 @@
     let bar;
     if (live && st.winner !== null) bar = `👑 <span><b>${esc(P(st.winner).name)}</b> venceu!</span>`;
     else if (live && st.pending && w === ME) bar = `⚡ <span><b>Sua resposta</b> — veja a janela aberta.</span>`;
-    else if (myTurn) bar = `🦒 <span><b>Sua vez.</b> ${E.canBuild(st) ? `${st.swapped ? 'Coringa trocado ✓ (sem girafa nem pescoço neste turno)' : st.built ? 'Girafa baixada ✓ (pescoço só no próximo turno)' : st.neckPlayed ? 'Pescoço encaixado ✓' : 'Baixe 1 girafa <i>ou</i> 1 pescoço'}. Depois ataque e ` : 'Ataque ou use ações e '}compre 1 carta para encerrar.</span>`;
+    else if (myTurn) bar = `🦒 <span><b>Sua vez.</b> ${E.canBuild(st) ? `${st.swapped ? 'Coringa trocado ✓ (sem girafa nem pescoço neste turno)' : st.built ? 'Girafa baixada ✓ (pescoço só no próximo turno)' : st.neckPlayed ? 'Pescoço encaixado ✓' : 'Baixe 1 girafa <i>ou</i> 1 pescoço'}. Depois ataque e ` : 'Ataque ou use ações e '}${st.objBought ? 'encerre o turno (pegou objetivo: sem compra do monte).' : 'compre 1 carta para encerrar.'}</span>`;
     else bar = `${ui.thinking !== null || /Esperando|Enviando/.test(ui.status) ? '<span class="dots"><i></i><i></i><i></i></span>' : '⏳'} <span>${esc(ui.status || `Vez de ${S.players[S.turn].name}`)}</span>`;
     if (NET.mode === 'online') bar += `<span class="netpill" title="Partida online">🌐</span>`;
     const foes = S.players.filter(p => p.idx !== ME);
@@ -1189,7 +1190,7 @@
         <div class="row">
           <div class="vgroup"><button class="deck objpile" id="objpile" title="Monte de objetivos"><span><b>${(S.objDeck || []).length}</b></span></button><div class="mini-lbl">objetivos</div></div>
           <div class="vgroup"><button class="deck pile ${myTurn ? 'go' : ''}" id="deck"><span><b>${S.deck.length}</b>monte</span></button><div class="mini-lbl">comprar</div></div>
-          <div class="vgroup"><div class="row" style="padding:0;gap:6px">${S.market.map((b, i) => b ? `<button class="card sm ${E.canTakeBody(st, ME, b) ? 'canbuy' : 'nobuy'}" data-market="${i}" style="background-image:url(${img(b)})" aria-label="Corpo ${esc(NM(b))}">${E.canTakeBody(st, ME, b) ? '<span class="tag">tenho a cabeça</span>' : ''}</button>` : `<div class="deck" style="opacity:.3"></div>`).join('')}</div><div class="mini-lbl">vitrine de corpos</div></div>
+          <div class="vgroup"><div class="row" style="padding:0;gap:6px">${S.market.map((b, i) => b ? `<button class="card sm ${E.hasHeadFor(st, ME, b) ? 'canbuy' : ''}" data-market="${i}" style="background-image:url(${img(b)})" aria-label="Corpo ${esc(NM(b))}">${E.hasHeadFor(st, ME, b) ? '<span class="tag">tenho a cabeça</span>' : ''}</button>` : `<div class="deck" style="opacity:.3"></div>`).join('')}</div><div class="mini-lbl">vitrine de corpos</div></div>
           <div class="sep"></div>
           <div class="vgroup"><button class="deck" id="discardbtn" style="${S.discard.length ? `background:url(${img(S.discard[S.discard.length - 1])}) center/cover` : ''}"><span>${S.discard.length ? '' : '<b>0</b>'}</span></button><div class="mini-lbl">descarte ${S.discard.length}</div></div>
         </div>
@@ -1251,7 +1252,7 @@
   function cleanSheets() {
     const s = ui.sheet; if (!s) return;
     const pd = st && st.pending;
-    if (['react', 'destiny', 'handlimit', 'stealdest'].includes(s.type) && !(pd && E.whoActs(st) === ME && (pd.type === s.type || (s.type === 'react' && pd.type === 'react')))) ui.sheet = null;
+    if (['react', 'destiny', 'handlimit', 'stealdest', 'reflect'].includes(s.type) && !(pd && E.whoActs(st) === ME && (pd.type === s.type || (s.type === 'react' && pd.type === 'react')))) ui.sheet = null;
     if (s.type === 'card' && !P(ME).hand.includes(s.cid)) ui.sheet = null;
     if (s.type === 'objpick' && !(P(ME).objOwed > 0)) ui.sheet = null;
   }
@@ -1263,14 +1264,14 @@
       const t = pd.type === 'react' ? 'react' : pd.type;
       if (!ui.sheet || ui.sheet.type !== t) ui.sheet = { type: t, sel: [] };
     } else {
-      if (ui.sheet && ['react', 'destiny', 'handlimit', 'stealdest'].includes(ui.sheet.type)) ui.sheet = null;
+      if (ui.sheet && ['react', 'destiny', 'handlimit', 'stealdest', 'reflect'].includes(ui.sheet.type)) ui.sheet = null;
       if (P(ME).objOwed > 0 && (!ui.sheet || ui.sheet.type !== 'objpick')) ui.sheet = { type: 'objpick' };
     }
   }
 
   // ---------- folhas ----------
   function openSheet(s) { ui.sheet = s; renderSheet(); }
-  function closeSheet() { if (['react', 'destiny', 'handlimit', 'stealdest', 'over', 'objpick'].includes(ui.sheet && ui.sheet.type)) return; ui.sheet = null; renderSheet(); }
+  function closeSheet() { if (['react', 'destiny', 'handlimit', 'stealdest', 'reflect', 'over', 'objpick'].includes(ui.sheet && ui.sheet.type)) return; ui.sheet = null; renderSheet(); }
   function renderSheet() {
     let sc = document.querySelector('.scrim');
     if (!ui.sheet) { if (sc) sc.remove(); return; }
@@ -1291,14 +1292,14 @@
       case 'rules': return `<h2>Como jogar</h2><div class="rules">
         <div><b>Objetivo.</b> Faça 5 pontos ou complete 3 cartas de objetivo. Você começa com 2 objetivos secretos e compra outro sempre que completa um.</div>
         <div><b>Começo.</b> Cada jogador recebe 2 objetivos secretos, 3 cartas do bolo de cabeças (as cabeças e as girafas especiais) e 4 cartas do monte.</div>
-        <div><b>Girafas.</b> Uma girafa é cabeça + corpo do mesmo personagem, ou uma girafa especial, que já vem inteira e <b>não recebe pescoços</b>. As cartas de fundo colorido (Girafclown e Mimicraffe) são <b>coringas</b>: a cabeça combina com qualquer corpo e o corpo com qualquer cabeça. Os corpos ficam na vitrine (3 abertos) ou chegam por troca e roubo.</div>
+        <div><b>Girafas.</b> Uma girafa é cabeça + corpo do mesmo personagem, ou uma girafa especial (Girassauro, Girafarão, Girapeta e Crocorafa), que já vem inteira, <b>não recebe pescoços</b> e conta como <b>nível 1</b> nos objetivos. As cartas de fundo colorido (Girafclown e Mimicraffe) são <b>coringas</b>: a cabeça combina com qualquer corpo e o corpo com qualquer cabeça. Os corpos ficam na vitrine (3 abertos) ou chegam por troca e roubo.</div>
         <div><b>Pescoços.</b> Encaixe até 5 por girafa. O nível é a quantidade de pescoços e as cores contam para os objetivos.</div>
-        <div><b>Seu turno.</b> 1) Baixe <b>1 girafa</b> ou encaixe <b>1 pescoço</b> (nunca os dois no mesmo turno: a girafa nova só recebe pescoço no turno seguinte). 2) Ataque e use ações. 3) Compre 1 carta do monte ou da vitrine — a compra encerra o turno. <b>Destino</b> e <b>Portal</b> substituem a compra e também encerram o turno. Com o Portal você pega qualquer carta do descarte; se escolher uma cabeça ou um corpo, leva a girafa completa (a outra parte vem junto, se estiver no descarte).</div>
-        <div><b>Coringas.</b> Girafalhaço e Mimicarafa combinam com qualquer girafa. Se você baixou uma girafa com coringa, num turno seguinte pode colocar a carta certa no lugar dele: o coringa volta para a sua mão, mas nesse turno você não baixa mais girafas nem pescoços.</div>
+        <div><b>Seu turno.</b> 1) Baixe <b>1 girafa</b> ou encaixe <b>1 pescoço</b> (nunca os dois no mesmo turno: a girafa nova só recebe pescoço no turno seguinte). 2) Ataque e use ações. 3) Compre 1 carta do monte ou da vitrine — a compra encerra o turno. Se no turno você pegou um objetivo novo, não compra do monte: pode pegar um corpo da vitrine ou encerrar sem comprar. <b>Destino</b> e <b>Portal</b> substituem a compra e também encerram o turno. Com o Portal você pega qualquer carta do descarte; se escolher uma cabeça ou um corpo, leva a girafa completa (a outra parte vem junto, se estiver no descarte).</div>
+        <div><b>Coringas.</b> Girafalhaço e Mimicarafa combinam com qualquer girafa. Se você tem uma girafa com coringa na mesa, pode usar a <b>primeira jogada</b> do turno para colocar a carta certa no lugar dele: o coringa volta para a sua mão, mas nesse turno você não baixa mais girafas nem pescoços.</div>
         <div><b>Combate.</b> Para atacar você precisa ter pelo menos uma girafa na mesa, e só dá para atacar quem também tem girafa. Quem ataca escolhe o oponente, a girafa e qual pescoço acertar; a cabeça só pode ser atacada quando a girafa não tem pescoços. Se um pescoço do meio quebrar, os de cima descem. Para destruir uma peça, os danos do mesmo turno precisam somar a defesa dela. Se a cabeça cair, a girafa inteira cai.</div>
         <div><b>Campo minado.</b> As 4 Evento Doom estão na metade de baixo do monte. Quem comprar leva 3 pontos de dano na girafa mais alta, somados de cima para baixo (ex.: 3 pescoços de defesa 1, ou 1 de defesa 3).</div>
-        <div><b>Reações.</b> Defesa devolve a ação a quem jogou. Pare! cancela. Pare Agora! (Sai Pra Lá) cancela tudo e ninguém responde.</div>
-        <div><b>Vitrine.</b> Só dá para pegar um corpo da vitrine se você tiver a cabeça dessa girafa na mão. Não há limite de cartas na mão.</div>
+        <div><b>Reações.</b> Defesa devolve a ação a quem jogou, e quem se defendeu escolhe onde o revide acerta. Pare! cancela. Pare Agora! (Sai Pra Lá) cancela tudo e ninguém responde.</div>
+        <div><b>Vitrine.</b> Qualquer corpo da vitrine pode ser comprado, mesmo sem a cabeça na mão. Não há limite de cartas na mão.</div>
         <div><b>Ritmo.</b> Cada carta jogada, comprada ou revelada fica ampliada até você tocar na tela. No menu dá para mudar isso.</div></div>${closeBtn}`;
       case 'menu': return `<h2>Menu</h2>
         <div class="field"><label>Ritmo dos adversários</label><div class="seg" id="speedm">${[['lento', 'Calmo'], ['normal', 'Normal'], ['rapido', 'Rápido']].map(([v, l]) => `<button data-v="${v}" class="${prefs.speed === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
@@ -1316,13 +1317,15 @@
           ${p.done.length ? `<div class="sectionlbl">Objetivos completos</div><div class="objs">${p.done.map(o => objHTML(o, true)).join('')}</div>` : '<p>Nenhum objetivo completo ainda.</p>'}${closeBtn}`;
       }
       case 'discard': return `<h2>Descarte</h2><p>${st.discard.length} cartas. Uma carta Portal pega qualquer uma delas.</p><div class="grid-cards">${st.discard.slice().reverse().map(id => `<div class="card" style="background-image:url(${img(id)})"></div>`).join('')}</div>${closeBtn}`;
-      case 'confirmdraw': return `<h2>Comprar do monte?</h2><p>Comprar encerra o seu turno. Cuidado com o campo minado.</p><div class="btns"><button class="btn" data-act="drawdeck"><span>Comprar e encerrar</span><small>${st.deck.length} no monte</small></button></div>${closeBtn}`;
+      case 'confirmdraw': return st.objBought
+        ? `<h2>Sem compra do monte</h2><p>Neste turno você pegou um objetivo, então não pode comprar do monte. Você pode pegar um corpo da vitrine ou encerrar o turno sem comprar.</p><div class="btns"><button class="btn" data-act="drawpass"><span>Encerrar o turno</span><small>sem comprar</small></button></div>${closeBtn}`
+        : `<h2>Comprar do monte?</h2><p>Comprar encerra o seu turno. Cuidado com o campo minado.</p><div class="btns"><button class="btn" data-act="drawdeck"><span>Comprar e encerrar</span><small>${st.deck.length} no monte</small></button></div>${closeBtn}`;
       case 'market': {
         const id = st.market[s.idx]; if (!id) return closeBtn;
         const has = E.canTakeBody(st, ME, id);
         const can = has && !ui.busy && st.turn === ME && !st.pending;
         return `<span class="kind">Corpo · vitrine</span><h2>${esc(NM(id))}</h2>${cardBig(id)}
-          <p>${has ? 'Você tem a cabeça desta girafa! Pegar o corpo conta como a sua compra e encerra o turno. Na próxima vez, junte os dois e baixe a girafa.' : `Você só pode pegar este corpo se tiver a cabeça de ${esc(NM(id))} na mão.`}</p>
+          <p>${E.hasHeadFor(st, ME, id) ? 'Você tem a cabeça desta girafa! Pegar o corpo conta como a sua compra e encerra o turno. Na próxima vez, junte os dois e baixe a girafa.' : `Pegar este corpo conta como a sua compra e encerra o turno. Você ainda não tem a cabeça de ${esc(NM(id))} na mão.`}</p>
           <div class="btns">${can ? `<button class="btn" data-act="drawmarket"><span>Pegar este corpo e encerrar</span></button>` : ''}</div>${closeBtn}`;
       }
       case 'card': return cardSheet(s);
@@ -1359,6 +1362,15 @@
         const pd = st.pending; if (!pd || pd.type !== 'destiny') return closeBtn;
         return `<span class="kind">Destino</span><h2>Escolha uma carta</h2><p>A outra volta para o topo do monte. Destino substitui a compra: seu turno termina depois da escolha.</p>
           <div class="grid-cards two">${pd.options.map((id, i) => `<button class="card" data-destiny="${i}" style="background-image:url(${img(id)})"><span class="tag">${K(id) === 'bomb' ? '💣 bomba!' : esc(NM(id))}</span></button>`).join('')}</div>`;
+      }
+      case 'reflect': {
+        const pd = st.pending; if (!pd || pd.type !== 'reflect') return closeBtn;
+        const kd = K(pd.card), t = P(pd.target), opts = E.reflectOptions(st, pd.card, pd.target);
+        const what = kd === 'steal' ? 'Qual pescoço você rouba de volta?' : kd === 'poison' ? 'Em qual peça o veneno volta?' : `Onde o revide acerta? (${E.CARDS[pd.card].dmg} de dano)`;
+        const groups = t.giraffes.map(g => { const os = opts.filter(o => o.gid === g.id); if (!os.length) return '';
+          return `<div class="sectionlbl">${esc(NM(g.special || g.head))}</div><div class="grid-cards pieces">` + os.slice().reverse().map(o => { const lv = g.necks.indexOf(o.piece) + 1; const d = hurtOf(st, o.piece); const breaks = kd === 'attack' && E.CARDS[pd.card].dmg + d >= E.CARDS[o.piece].def;
+            return `<button class="card" data-rf='${JSON.stringify(o)}' style="background-image:url(${img(o.piece)})" aria-label="${esc(NM(o.piece))}"><span class="tag">${lv ? 'nível ' + lv : 'cabeça'}${breaks ? ' · quebra!' : ''}</span></button>`; }).join('') + `</div>`; }).join('');
+        return `<span class="kind">Defesa · revide</span><h2>${what}</h2><p>Sua defesa devolveu <b>${esc(NM(pd.card))}</b> contra ${esc(t.name)}. Escolha a peça.</p>${groups}`;
       }
       case 'stealdest': {
         const pd = st.pending; if (!pd || pd.type !== 'stealdest') return closeBtn;
@@ -1410,7 +1422,7 @@
         const pairsIn = me.hand.filter(x => C.pairs(E.CARDS[x], c));
         const sw = swapTargets(id);
         const swapHTML = sw.length ? `<div class="sectionlbl">Trocar o coringa</div>` + sw.map(g => {
-          const why = !E.canBuild(st) ? 'só antes de atacar' : st.swapped ? 'já trocou neste turno' : (st.built || st.neckPlayed) ? 'você já baixou neste turno' : g.born === st.turnNo ? 'só no próximo turno' : '';
+          const why = !E.canBuild(st) ? 'só antes de atacar' : st.swapped ? 'já trocou neste turno' : (st.built || st.neckPlayed) ? 'você já baixou neste turno' : st.played ? 'só como primeira jogada do turno' : g.born === st.turnNo ? 'só no próximo turno' : '';
           return `<button class="btn ${why ? 'ghost' : ''}" data-go='${JSON.stringify({ swap: g.id })}' ${why ? 'disabled' : ''}><span>Colocar no lugar de ${esc(NM(g[kd]))}</span><small>${why || 'o coringa volta para a mão'}</small></button>`;
         }).join('') + `<p class="note">Trocando o coringa, neste turno você não baixa mais girafas nem pescoços.</p>` : '';
         if (st.swapped) body = `<p>Neste turno você já trocou um coringa: não dá mais para baixar girafas nem pescoços.</p>`;
@@ -1507,6 +1519,7 @@
       if (a === 'reallynew' || a === 'again') { if (NET.mode === 'online') leaveOnline(); else clearSave(); st = null; V = null; ui.view = 'setup'; ui.sheet = null; stageCards.forEach(c => c.el.remove()); stageCards = []; $stage.classList.remove('on'); renderSheet(); renderSetup(); }
       if (a === 'seetable') { ui.sheet = null; ui.focus = st.winner; renderSheet(); render(); }
       if (a === 'drawdeck') act({ t: 'draw', src: 'deck' });
+      if (a === 'drawpass') act({ t: 'draw', src: 'pass' });
       if (a === 'drawmarket') act({ t: 'draw', src: s.idx });
       if (a === 'back') { s.params = {}; renderSheet(); }
       if (a === 'backg') { s.params = { target: s.params.target }; renderSheet(); }
@@ -1532,6 +1545,7 @@
     on('[data-react]', b => act({ t: 'respond', cid: b.dataset.react || null }));
     on('[data-destiny]', b => act({ t: 'destiny', i: +b.dataset.destiny }));
     on('[data-sd]', b => act({ t: 'sd', gid: b.dataset.sd }));
+    on('[data-rf]', b => { const o = JSON.parse(b.dataset.rf); act({ t: 'rf', gid: o.gid, piece: o.piece }); });
     on('[data-objpick]', b => act({ t: 'objpick', i: +b.dataset.objpick }));
     on('[data-hl]', b => { const id = b.dataset.hl; s.sel = s.sel.includes(id) ? s.sel.filter(x => x !== id) : s.sel.concat(id).slice(-st.pending.n); renderSheet(); });
   }

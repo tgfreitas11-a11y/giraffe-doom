@@ -65,14 +65,15 @@
     const id = g.special || g.head;
     return { kind: 'head', id, def: card(id).def };
   }
-  function giraffeView(g) { return { necks: g.necks.map(id => card(id).color) }; }
+  // girafas especiais (Girassauro, Girafarão, Girapeta, Crocorafa) contam como nível 1
+  function giraffeView(g) { return { necks: g.necks.map(id => card(id).color), special: !!g.special }; }
   function score(p) { return p.done.reduce((s, o) => s + OBJ[o].pts, 0); }
   function canBuild(st) { return !st.attacked && !st.pending && !st.winner; }
   function targetable(st, pid, actorPid) { const p = st.players[pid]; return pid !== actorPid && p.sleep === 0; }
 
   // ---------- Início / fim de turno ----------
   function startTurn(st) {
-    st.dmg = {}; st.turnHits = {}; st.attacked = false; st.built = 0; st.neckPlayed = 0; st.swapped = false; st.mustEndTurn = false;
+    st.dmg = {}; st.turnHits = {}; st.attacked = false; st.built = 0; st.neckPlayed = 0; st.swapped = false; st.mustEndTurn = false; st.played = 0; st.objBought = false;
     const p = cur(st);
     ev(st, { t: 'turn', pid: p.idx });
     // veneno
@@ -201,6 +202,7 @@
     const rest = opts.filter((_, i) => i !== idx);
     rest.forEach(o => { st.objDeck.splice(st.objDeck.lastIndexOf(o), 1); st.objDeck.unshift(o); });
     p.objectives.push(pick);
+    if (p.idx === st.turn) st.objBought = true; // quem compra objetivo no turno não compra do monte
     ev(st, { t: 'objpick', pid: p.idx, obj: pick, under: rest.length });
     log(st, `🎯 ${p.name} escolheu um novo objetivo${rest.length ? ' e pôs o outro embaixo do monte de objetivos' : ''}.`);
     return true;
@@ -272,10 +274,10 @@
       if (!canBuild(st)) return err('A troca do coringa só pode ser feita antes de atacar.');
       if (st.swapped) return err(SWAPPED);
       if (st.built >= 1 || st.neckPlayed >= 1) return err('Neste turno você já baixou girafa ou pescoço: a troca do coringa fica para o próximo turno.');
+      if (st.played > 0) return err('A troca do coringa precisa ser a primeira jogada do turno.');
       if (c.wild) return err('Use a carta certa (não coringa) para trocar.');
       const g = p.giraffes.find(x => x.id === params.swap);
       if (!g || g.special) return err('Escolha uma girafa sua.');
-      if (g.born === st.turnNo) return err('Essa girafa foi baixada neste turno: a troca só a partir do próximo.');
       const slot = k, other = k === 'head' ? g.body : g.head;
       if (!card(g[slot]).wild) return err(`Essa girafa não tem ${k === 'head' ? 'cabeça' : 'corpo'} coringa.`);
       if (!card(other).wild && card(other).match !== c.match) return err('Essa carta não é da mesma girafa.');
@@ -357,6 +359,7 @@
     const c = card(cid);
     const k = c.kind;
     const take = id => { p.hand.splice(p.hand.indexOf(id), 1); };
+    st.played = (st.played || 0) + 1;
     if ((k === 'head' || k === 'body') && params.swap) {
       const g = p.giraffes.find(x => x.id === params.swap);
       const back = g[k];
@@ -483,15 +486,39 @@
     if (!st.pending) checkObjectives(st, st.turn);
     if (st.mustEndTurnNow) { st.mustEndTurnNow = false; if (!st.winner) endTurn(st); }
   }
+  // peças do atacante que a defesa pode acertar de volta
+  function reflectOptions(st, cid, attackerPid) {
+    const k = card(cid).kind, a = st.players[attackerPid], out = [];
+    a.giraffes.forEach(g => {
+      if (k === 'steal') g.necks.forEach(n => out.push({ gid: g.id, piece: n }));
+      else if (k === 'attack' || k === 'poison') (g.necks.length ? g.necks : [g.special || g.head]).forEach(n => out.push({ gid: g.id, piece: n }));
+    });
+    return out;
+  }
   function reflect(st, e0, defender) {
     const k = card(e0.card).kind;
     const attacker = st.players[e0.pid];
-    const params = Object.assign({}, e0.params, { target: e0.pid });
-    if (k === 'attack') { const g = biggest(attacker); if (!g) return log(st, `${attacker.name} não tem girafas — nada acontece.`); params.gid = g.id; }
-    if (k === 'poison') { const g = biggest(attacker); if (!g) return log(st, `${attacker.name} não tem girafas — nada acontece.`); params.gid = g.id; }
-    if (k === 'steal') { const g = attacker.giraffes.filter(x => x.necks.length).sort((a, b) => b.necks.length - a.necks.length)[0]; if (!g) return log(st, 'Não havia pescoço para devolver.'); params.gid = g.id; }
     if (k === 'exchange') return log(st, 'A troca foi desfeita.');
+    const params = { target: e0.pid };
+    if (k === 'attack' || k === 'poison' || k === 'steal') {
+      const opts = reflectOptions(st, e0.card, e0.pid);
+      if (!opts.length) return log(st, k === 'steal' ? 'Não havia pescoço para devolver.' : `${attacker.name} não tem girafas — nada acontece.`);
+      // quem se defendeu escolhe onde o revide acerta
+      if (opts.length > 1) { st.pending = { type: 'reflect', pid: defender, card: e0.card, target: e0.pid }; return; }
+      Object.assign(params, opts[0]);
+    } else Object.assign(params, e0.params, { target: e0.pid });
     effect(st, defender, e0.card, params, true);
+  }
+  function chooseReflect(st, pid, gid, piece) {
+    const pd = st.pending;
+    if (!pd || pd.type !== 'reflect' || pd.pid !== pid) return err('Nada para escolher.');
+    const ok = reflectOptions(st, pd.card, pd.target).some(o => o.gid === gid && o.piece === piece);
+    if (!ok) return err('Escolha uma peça do adversário.');
+    st.pending = null;
+    effect(st, pid, pd.card, { target: pd.target, gid, piece }, true);
+    if (!st.pending) checkObjectives(st, st.turn);
+    if (st.mustEndTurnNow && !st.pending) { st.mustEndTurnNow = false; if (st.winner === null) endTurn(st); }
+    return { ok: true };
   }
 
   // ---------- Efeitos ----------
@@ -637,6 +664,13 @@
     if (st.pending) return err('Aguardando uma resposta.');
     if (pid !== st.turn) return err('Não é a sua vez.');
     const p = st.players[pid];
+    if (source === 'pass') {
+      if (!st.objBought) return err('Compre uma carta para encerrar o turno.');
+      log(st, `${p.name} pegou um objetivo neste turno e encerrou sem comprar do monte.`);
+      ev(st, { t: 'pass', pid });
+      endTurn(st); return { ok: true };
+    }
+    if (source === 'deck' && st.objBought) return err('Neste turno você pegou um objetivo: não pode comprar do monte. Pegue um corpo da vitrine ou encerre o turno.');
     if (source === 'deck') {
       const id = drawOne(st);
       if (id === null) log(st, 'Não há cartas para comprar.');
@@ -684,10 +718,9 @@
     return out.sort((x, y) => (card(y[0]).match === card(y[1]).match) - (card(x[0]).match === card(x[1]).match));
   }
   function canAttack(st, pid) { return st.players[pid].giraffes.length > 0; }
-  function canTakeBody(st, pid, bodyId) {
-    const b = card(bodyId);
-    return st.players[pid].hand.some(h => card(h).kind === 'head' && C.pairs(card(h), b));
-  }
+  // qualquer corpo da vitrine pode ser comprado, mesmo sem a cabeça na mão
+  function canTakeBody(st, pid, bodyId) { return !!bodyId; }
+  function hasHeadFor(st, pid, bodyId) { const b = card(bodyId); return st.players[pid].hand.some(h => card(h).kind === 'head' && C.pairs(card(h), b)); }
 
   // quem precisa agir agora
   function whoActs(st) {
@@ -699,7 +732,7 @@
   }
 
   const API = {
-    CARDS, OBJ, HAND_LIMIT, MAX_NECKS, COLOR_PT, pieceOf, discardPairs, portalPartner, objOptions, chooseObjective, newGame, validate, play, respond, chooseDestiny, chooseStealDest, stealDests, draw,
+    CARDS, OBJ, HAND_LIMIT, MAX_NECKS, COLOR_PT, pieceOf, discardPairs, portalPartner, objOptions, chooseObjective, newGame, validate, play, respond, chooseDestiny, chooseStealDest, stealDests, chooseReflect, reflectOptions, hasHeadFor, draw,
     discardExcess, canTakeBody, canAttack, eligibleReactions, whoActs, topPiece, score, canBuild, targetable, biggest, rand,
   };
   root.GD_ENGINE = API;

@@ -34,7 +34,7 @@
     ['Cactus Dance', 'attack', 1], ['Piranha Shake', 'attack', 1], ['Sk8 Brown Fall', 'attack', 1],
     ['Coconut Fall', 'attack', 1], ['Warp Machine', 'attack', 1], ['Catapult', 'attack', 1],
     ['Colorful Bucket', 'attack', 1], ['Cake Cannon Cake', 'attack', 1], ['Washing My Guts', 'attack', 1],
-    ['Balloon Pop Pop', 'attack', 1],
+    ['Balloon Pop Pop', 'attack', 2], // carta vermelha = 2 de dano
     ['Tea Time Fall', 'attack', 2], ['Beesaster', 'attack', 2], ['Quick Quicksand', 'attack', 2],
     ['Toxic Ride', 'poison', 1], ['Jelly Belly', 'poison', 1], ['Scorpion Squeeze', 'poison', 1], ['Viper Venom', 'poison', 1],
     ['Deadly Comet', 'bomb', 3], ['Death by Strike', 'bomb', 3], ['Beyond the Sky', 'bomb', 3], ['Origami Knot', 'bomb', 3],
@@ -93,6 +93,8 @@
   const cnt = (arr, c) => arr.filter(x => x === c).length;
   const distinct = arr => new Set(arr).size;
   const any = (gs, f) => gs.some(g => f(g.necks));
+  // nível da girafa: pescoços; girafas especiais contam como nível 1
+  const lvl = g => g.special ? Math.max(1, g.necks.length) : g.necks.length;
   const CHECKS = [
     gs => any(gs, n => n.length >= 4 && n.every((c, i) => i === 0 || c !== n[i - 1])),
     (gs, st) => st.maxHitsOnOne >= 3,
@@ -102,8 +104,8 @@
     gs => any(gs, n => n.length >= 4 && cnt(n, 'R') >= 3),
     gs => any(gs, n => n.length >= 5 && distinct(n) === 2),
     gs => any(gs, n => n.length >= 5 && distinct(n) === 3),
-    gs => gs.filter(g => g.necks.length >= 4).length >= 2,
-    gs => gs.some(g => g.necks.length >= 5) && gs.filter(g => g.necks.length >= 1).length >= 3,
+    gs => gs.filter(g => lvl(g) >= 4).length >= 2,
+    gs => gs.some(g => lvl(g) >= 5) && gs.filter(g => lvl(g) >= 1).length >= 3,
     gs => any(gs, n => n.length >= 4 && !n.includes('R') && !n.includes('B')),
     gs => any(gs, n => n.length >= 2 && n.includes('R')),
     gs => any(gs, n => n.length >= 2 && cnt(n, 'W') === 2),
@@ -112,8 +114,8 @@
     gs => any(gs, n => n.length >= 4 && distinct(n) >= 4),
     gs => any(gs, n => n.length >= 5 && distinct(n) === 5),
     gs => any(gs, n => n.length >= 5 && n[0] === n[4]),
-    gs => gs.filter(g => g.necks.length >= 4).length >= 2,
-    gs => gs.filter(g => g.necks.length >= 1).length >= 3,
+    gs => gs.filter(g => lvl(g) >= 4).length >= 2,
+    gs => gs.filter(g => lvl(g) >= 1).length >= 3,
   ];
   OBJECTIVES.forEach((o, i) => { o.id = 'obj' + i; o.check = CHECKS[i]; });
 
@@ -154,7 +156,7 @@
   const KIND_HELP = {
     head: 'Baixe junto com o corpo da mesma girafa (ou com um corpo coringa). Se uma girafa sua foi baixada com cabeça coringa, num turno seguinte esta cabeça pode substituir o coringa, que volta para a mão; nesse turno você não baixa girafa nem pescoço.',
     body: 'Baixe junto com a cabeça da mesma girafa (ou com uma cabeça coringa). Se uma girafa sua foi baixada com corpo coringa, num turno seguinte este corpo pode substituir o coringa, que volta para a mão; nesse turno você não baixa girafa nem pescoço.',
-    special: 'Girafa inteira numa carta só. Baixe na mesa. Ela não recebe pescoços.',
+    special: 'Girafa inteira numa carta só. Baixe na mesa. Ela não recebe pescoços e conta como girafa de nível 1 nos objetivos.',
     neck: 'Encaixe numa girafa sua (até 5 pescoços). A cor conta para os objetivos.',
     attack: 'Precisa ter pelo menos uma girafa sua na mesa. Escolha o oponente, a girafa e o pescoço que vai levar o dano. A cabeça só pode ser atacada quando a girafa não tem pescoços.',
     poison: 'Precisa ter pelo menos uma girafa sua na mesa. Escolha o oponente, a girafa e o pescoço: a carta fica em cima dele, que perde 1 ponto de defesa no início de cada turno do dono, por 3 turnos (sem pescoços, vai na cabeça). Os pontos perdidos não voltam. Só o antídoto (Medicina Mágica) para o veneno.',
