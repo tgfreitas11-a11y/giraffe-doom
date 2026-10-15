@@ -23,6 +23,13 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Marcar a versão
+        run: |
+          N=$(git rev-list --count HEAD)
+          echo "GD_BUILD=$((N + 100))" >> $GITHUB_ENV
+          echo "window.GD_VERSION = '$N · $(TZ=America/Sao_Paulo date +%d/%m/%Y)';" > www/version.js
       - uses: actions/configure-pages@v5
         with:
           enablement: true

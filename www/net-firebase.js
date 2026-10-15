@@ -45,7 +45,8 @@
     const peerCbs = [];
     const offs = [];
 
-    const writeMe = () => meRef.set({ j: JSON.stringify(mine), at: TS }).catch(e => console.error('presença', e));
+    // update (não set): não apaga a sinalização de voz que fica em peers/{uid}/v
+    const writeMe = () => meRef.update({ j: JSON.stringify(mine), at: TS }).catch(e => console.error('presença', e));
     let wTimer = null;
     const schedule = () => { if (!wTimer) wTimer = setTimeout(() => { wTimer = null; writeMe(); }, 30); };
 
@@ -54,16 +55,21 @@
     const onConn = s => { if (s.val() === true) { meRef.onDisconnect().remove().then(writeMe); } };
     connRef.on('value', onConn); offs.push(() => connRef.off('value', onConn));
 
-    const onPeersVal = s => {
-      const v = s.val() || {};
-      peers = Object.keys(v).map(by => {
-        let p = {}; try { p = JSON.parse(v[by].j || '{}'); } catch (e) {}
-        return { by, kind: 'viewer', guest: false, presence: p };
-      });
+    // presença: escuta só o campo "j" de cada jogador (a sinalização de voz não dispara atualizações)
+    const pmap = new Map(); const jOffs = new Map();
+    const emit = () => {
+      peers = Array.from(pmap, ([by, p]) => ({ by, kind: 'viewer', guest: false, presence: p }));
       const ch = { peers: peers.slice() };
       peerCbs.forEach(cb => { try { cb(ch); } catch (e) { console.error(e); } });
     };
-    peersRef.on('value', onPeersVal); offs.push(() => peersRef.off('value', onPeersVal));
+    const onAdd = cs => {
+      const by = cs.key, jr = cs.ref.child('j');
+      const h = js => { let p = null; try { p = JSON.parse(js.val() || 'null'); } catch (e) {} if (p) pmap.set(by, p); else pmap.delete(by); emit(); };
+      jr.on('value', h); jOffs.set(by, () => jr.off('value', h));
+    };
+    const onRem = cs => { const by = cs.key; if (jOffs.has(by)) { jOffs.get(by)(); jOffs.delete(by); } pmap.delete(by); emit(); };
+    peersRef.on('child_added', onAdd); peersRef.on('child_removed', onRem);
+    offs.push(() => { peersRef.off('child_added', onAdd); peersRef.off('child_removed', onRem); jOffs.forEach(f => f()); jOffs.clear(); });
 
     const room = {
       presence(part) {
@@ -94,8 +100,21 @@
 
     const user = { id: async () => uid, isOwner: async () => owner };
 
+    // sinalização da voz (WebRTC): cada um escreve só no próprio nó, em peers/{eu}/v/{destino}
+    const voice = {
+      uid,
+      send(to, msg) { return meRef.child('v').child(to).push(msg).catch(e => console.error('voz', e)); },
+      clearTo(to) { return meRef.child('v').child(to).remove().catch(() => {}); },
+      clearAll() { return meRef.child('v').remove().catch(() => {}); },
+      listen(from, cb) {
+        const r = peersRef.child(from).child('v').child(uid);
+        const h = cs => { try { cb(cs.key, cs.val()); } catch (e) { console.error(e); } };
+        r.on('child_added', h); return () => r.off('child_added', h);
+      }
+    };
+
     return {
-      code, owner, db, room, user,
+      code, owner, db, room, user, voice,
       close() {
         offs.forEach(f => f()); clearTimeout(wTimer);
         meRef.onDisconnect().cancel(); meRef.remove().catch(() => {});

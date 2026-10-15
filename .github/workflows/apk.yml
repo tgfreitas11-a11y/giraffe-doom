@@ -13,6 +13,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Marcar a versão
+        run: |
+          N=$(git rev-list --count HEAD)
+          echo "GD_BUILD=$((N + 100))" >> $GITHUB_ENV
+          echo "window.GD_VERSION = '$N · $(TZ=America/Sao_Paulo date +%d/%m/%Y)';" > www/version.js
 
       - uses: actions/setup-node@v4
         with:

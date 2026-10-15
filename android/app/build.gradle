@@ -1,6 +1,6 @@
 apply plugin: 'com.android.application'
 
-def runNumber = Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
+def runNumber = Integer.parseInt(System.getenv('GD_BUILD') ?: System.getenv('GITHUB_RUN_NUMBER') ?: '1')
 
 android {
     namespace "com.giraffedoom.jogo"

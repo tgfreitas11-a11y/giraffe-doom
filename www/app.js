@@ -723,9 +723,11 @@
     R.db.doc('online/game').onSnapshot(onGameDoc, () => { toast(tS('netErr')); disconnectRoom(); });
     R.room.onPeers(onPeers);
     R.room.presence({ name: myName(), seen: 0 });
+    if (window.GDVoice && R.voice) GDVoice.attach(R.voice, R.room, msg => toast(msg));
     if (!watchdogOn) { watchdogOn = true; setInterval(hostWatchdog, 5000); }
   }
   function disconnectRoom() {
+    if (window.GDVoice) GDVoice.detach();
     if (window.GDNet) window.GDNet.leave();
     NET.ready = false; NET.why = 'code'; NET.db = null; NET.room = null; NET.doc = null; NET.owner = false; NET.code = null; NET.autoJoin = false;
     refreshSetup();
@@ -848,13 +850,15 @@
       ${NET.code ? `<div class="field"><label>Código da sala</label><div style="font-family:var(--f-display);font-size:30px;letter-spacing:.2em;color:var(--bronze);user-select:all">${esc(NET.code)}</div></div>` : ''}
       <p class="lede">${host && NET.code ? 'Passe este código para quem vai jogar. A pessoa abre o jogo, digita o código em <b>Código da sala</b> e toca em <b>Entrar</b>; ela aparece aqui. Se alguém sair durante a partida, todos voltam para esta sala e a partida recomeça.' : host ? 'Mande o link do jogo para quem vai jogar. Quando a pessoa abrir e tocar em <b>Entrar na sala de espera</b>, ela aparece aqui. Se alguém sair durante a partida, todos voltam para esta sala e a partida recomeça.' : `Você está na sala de espera de <b>${esc(D.hostName || 'anfitrião')}</b>. A partida começa quando o anfitrião tocar em Começar. Se alguém sair durante a partida, todos voltam para cá.`}</p>
       <div class="field"><label>Na mesa (${people.length} de ${MAX_SEATS})</label>
-        <div class="seatlist">${people.map(p => `<div class="seat"><span>🦒 ${esc(p.name)}</span><small>${p.by === D.host ? 'anfitrião' : ''}${p.me ? ' · você' : ''}</small></div>`).join('') || '<p class="note">Ninguém ainda.</p>'}
+        <div class="seatlist">${people.map(p => `<div class="seat" data-vuid="${esc(p.by)}"><span>🦒 ${esc(p.name)}</span><small>${p.by === D.host ? 'anfitrião' : ''}${p.me ? ' · você' : ''}</small></div>`).join('') || '<p class="note">Ninguém ainda.</p>'}
         ${host ? Array.from({ length: bots }, (_, i) => `<div class="seat bot"><span>🤖 ${BOT_NAMES[i]}</span><small>bot</small></div>`).join('') : ''}</div></div>
+      ${NET.code && window.GDVoice ? `<div class="field"><label>Conversa de voz</label><div style="display:flex;gap:8px"><button class="btn ghost voicebtn" data-voicebtn id="lvoice" style="flex:1;justify-content:center"></button><button class="btn ghost" data-voiceleave id="lvoiceleave" hidden style="flex:0 0 auto"><span>Sair da voz</span></button></div><p class="note" style="margin:0">Toque no microfone para entrar na conversa. Depois, toque de novo para ficar mudo.</p></div>` : ''}
       ${host ? `<div class="field"><label>Bots para completar a mesa</label><div class="seg" id="lbots">${[0, 1, 2, 3, 4, 5].map(n => `<button data-n="${n}" class="${n === Math.min(prefs.bots, 5) ? 'on' : ''}" ${people.length + n > MAX_SEATS ? 'disabled' : ''}>${n}</button>`).join('')}</div></div>
       <button class="btn" id="lstart" ${people.length + bots < 2 ? 'disabled' : ''}><span>Começar a partida</span><small>${people.length + bots} jogadores</small></button>
       <button class="btn ghost" id="lclose"><span>Fechar a mesa</span></button>` : `<div class="waiting"><span class="dots"><i></i><i></i><i></i></span> Esperando o anfitrião começar…</div><button class="btn ghost" id="lleave"><span>Sair da sala de espera</span></button>`}
     </div>`;
     const q = id => $app.querySelector(id);
+    if (q('#lvoice')) { q('#lvoice').onclick = () => GDVoice.toggle(); q('#lvoiceleave').onclick = () => GDVoice.leave(); GDVoice.refresh(); }
     if (q('#lbots')) q('#lbots').onclick = e => { const n = e.target.dataset.n; if (n !== undefined && !e.target.disabled) { prefs.bots = +n; savePrefs(); renderLobby(); } };
     if (q('#lstart')) q('#lstart').onclick = () => hostStart(people, bots);
     if (q('#lclose')) q('#lclose').onclick = async () => { await hostEndTable(); if (NET.code) { disconnectRoom(); ui.view = 'setup'; renderSetup(); } };
@@ -1092,6 +1096,7 @@
         <button class="btn" id="start"><span>${tS('start')}</span><small>${prefs.bots + 1} ${tS('players')}</small></button>
         <button class="btn ghost" id="rulesbtn"><span>${tS('rules')}</span></button>
         <div class="online" id="online">${onlineSetupHTML()}</div>
+        <p class="ver">versão ${esc(String(window.GD_VERSION || 'dev'))}</p>
       </div>`;
     bindOnlineSetup();
     bindLangWidget($app, () => renderSetup());
@@ -1168,11 +1173,12 @@
       <div class="top">
         <div class="logo"><img src="img/logo.webp" alt="Giraffe Doom"></div>
         <button class="iconbtn score-pill" id="objbtn" title="Seus objetivos">🎯 ${E.score(me)}·${me.done.length}/3</button>
+        ${NET.code ? '<button class="iconbtn voicebtn" data-voicebtn id="voicebtn" hidden></button>' : ''}
         <button class="iconbtn" id="logbtn" title="Histórico">📜</button>
         <button class="iconbtn" id="menubtn" title="Menu">☰</button>
       </div>
       <div class="foes">${foes.map(p => `
-        <button class="foe ${S.turn === p.idx ? 'turn' : ''} ${ui.focus === p.idx ? 'focus' : ''} ${ui.thinking === p.idx ? 'thinking' : ''}" data-foe="${p.idx}">
+        <button class="foe ${S.turn === p.idx ? 'turn' : ''} ${ui.focus === p.idx ? 'focus' : ''} ${ui.thinking === p.idx ? 'thinking' : ''}" data-foe="${p.idx}"${NET.mode === 'online' && NET.doc && NET.doc.seats && NET.doc.seats[p.idx] && NET.doc.seats[p.idx].by ? ` data-vuid="${esc(NET.doc.seats[p.idx].by)}"` : ''}>
           <span class="nm">${esc(p.name)} ${statusIcons(p)}</span>
           <span class="meta"><span>🂠 ${p.hand.length}</span><span>🎯 ${E.score(p)}·${p.done.length}</span><span>🦒 ${p.giraffes.length}</span></span>
           <span class="tower">${p.giraffes.map(g => `<i style="height:${4 + g.necks.length * 3}px"></i>`).join('') || '<i style="height:2px;opacity:.4"></i>'}</span>
@@ -1239,6 +1245,7 @@
   function bind() {
     $app.querySelector('#objbtn').onclick = () => openSheet({ type: 'objectives' });
     $app.querySelector('#logbtn').onclick = () => openSheet({ type: 'log' });
+    if ($app.querySelector('#voicebtn')) { $app.querySelector('#voicebtn').onclick = () => GDVoice.toggle(); GDVoice.refresh(); }
     $app.querySelector('#menubtn').onclick = () => openSheet({ type: 'menu' });
     $app.querySelectorAll('[data-foe]').forEach(b => b.onclick = () => { ui.pin = null; ui.focus = +b.dataset.foe; ui.manualUntil = Date.now() + 15000; render(); });
     const mt = $app.querySelector('#mytable'); if (mt) mt.onclick = () => { ui.pin = ME; ui.focus = ME; render(); };
@@ -1321,6 +1328,7 @@
         <button class="btn ghost" data-act="tap"><span>Cartas ampliadas</span><small>${prefs.tap ? 'ficam até eu tocar' : 'somem sozinhas'}</small></button>
         <button class="btn ghost" data-act="sound"><span>Som</span><small>${prefs.sound ? 'ligado' : 'desligado'}</small></button>
         <button class="btn ghost" data-act="rules"><span>Como jogar</span></button>
+        ${window.GDVoice && GDVoice.joined ? `<button class="btn ghost" data-act="voiceleave"><span>Sair da conversa de voz</span></button>` : ''}
         ${NET.mode === 'online' ? (NET.isHost ? `<button class="btn ghost" data-act="tolobby"><span>Reiniciar na sala de espera</span><small>todos voltam para a sala</small></button><button class="btn ghost" data-act="endtable"><span>Fechar a mesa online</span><small>para todos</small></button>` : '') + `<button class="btn ghost" data-act="leaveonline"><span>Sair da mesa</span><small>a partida reinicia para todos</small></button>` : `<button class="btn ghost" data-act="newgame"><span>Abandonar e voltar ao início</span></button>`}</div>${closeBtn}`;
       case 'confirmnew': return `<h2>Abandonar a partida?</h2><p>A partida atual será perdida.</p><div class="btns"><button class="btn" data-act="reallynew"><span>Sim, voltar ao início</span></button></div>${closeBtn}`;
       case 'log': return `<h2>Histórico</h2><div class="loglist">${st.log.slice().reverse().map(l => `<div>${esc(l)}</div>`).join('')}</div>${closeBtn}`;
@@ -1533,6 +1541,7 @@
       if (a === 'reallynew' || a === 'again') { if (NET.mode === 'online') leaveOnline(); else clearSave(); st = null; V = null; ui.view = 'setup'; ui.sheet = null; stageCards.forEach(c => c.el.remove()); stageCards = []; $stage.classList.remove('on'); renderSheet(); renderSetup(); }
       if (a === 'seetable') { ui.sheet = null; ui.focus = st.winner; renderSheet(); render(); }
       if (a === 'drawdeck') act({ t: 'draw', src: 'deck' });
+      if (a === 'voiceleave') { GDVoice.leave(); ui.sheet = null; renderSheet(); }
       if (a === 'drawpass') act({ t: 'draw', src: 'pass' });
       if (a === 'drawmarket') act({ t: 'draw', src: s.idx });
       if (a === 'back') { s.params = {}; renderSheet(); }
