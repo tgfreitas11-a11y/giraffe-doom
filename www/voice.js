@@ -3,12 +3,28 @@
 (function () {
   const ICE = [
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    // retransmissão pública e gratuita (para redes que não deixam os aparelhos se falarem direto)
-    { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }
+    { urls: 'stun:stun.cloudflare.com:3478' }
   ];
-  // permite trocar/adicionar servidores sem mexer no código (ex.: window.GD_TURN = [{urls, username, credential}])
-  const iceServers = () => (window.GD_TURN || []).concat(ICE);
+  // Retransmissão (TURN) para quando os aparelhos estão em redes diferentes (4G, Wi-Fi de outra casa…).
+  // Open Relay (metered.ca): credencial temporária gerada aqui mesmo a partir da chave pública do serviço.
+  const RELAY_HOST = 'staticauth.openrelay.metered.ca', RELAY_SECRET = 'openrelayprojectsecret';
+  async function relayServers() {
+    const out = [];
+    // serviço próprio, se configurado (ex.: conta grátis na Metered): window.GD_TURN_API = 'https://SEUAPP.metered.live/api/v1/turn/credentials?apiKey=...'
+    if (window.GD_TURN_API) { try { const r = await fetch(window.GD_TURN_API); if (r.ok) out.push(...(await r.json())); } catch (e) {} }
+    if (window.GD_TURN) out.push(...window.GD_TURN);
+    try {
+      const user = Math.floor(Date.now() / 1000) + 24 * 3600 + ':giraffedoom';
+      const enc = new TextEncoder();
+      const key = await crypto.subtle.importKey('raw', enc.encode(RELAY_SECRET), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+      const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(user)));
+      const cred = btoa(String.fromCharCode(...sig));
+      out.push({ urls: [`turn:${RELAY_HOST}:80`, `turn:${RELAY_HOST}:80?transport=tcp`, `turn:${RELAY_HOST}:443`, `turns:${RELAY_HOST}:443?transport=tcp`], username: user, credential: cred });
+    } catch (e) { console.warn('voz: sem retransmissão', e); }
+    return out;
+  }
+  let relays = [];
+  const iceServers = () => relays.concat(ICE);
   let api = null, room = null, notify = () => {};
   let joined = false, session = null, stream = null, muted = false, joining = false;
   const peers = new Map();      // uid -> { pc, rs (sessão do outro), audio, pend: [] , seen: Set }
@@ -44,6 +60,7 @@
       notify('Sem acesso ao microfone. Libere o microfone para o Giraffe Doom nas configurações do celular.');
       return;
     }
+    relays = await relayServers();
     joining = false; joined = true; muted = false; session = rnd();
     try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume && actx.resume(); } catch (e) {}
     watchLevel('me', stream);
@@ -98,7 +115,8 @@
     pc.ontrack = e => {
       const st = e.streams[0] || new MediaStream([e.track]);
       if (!x.audio) { x.audio = new Audio(); x.audio.autoplay = true; x.audio.setAttribute('playsinline', ''); x.audio.style.display = 'none'; document.body.appendChild(x.audio); }
-      x.audio.srcObject = st; const pl = x.audio.play(); if (pl && pl.catch) pl.catch(() => {});
+      x.audio.srcObject = st; x.audio.muted = false; x.audio.volume = 1;
+      const pl = x.audio.play(); if (pl && pl.catch) pl.catch(() => { x.blocked = true; notify('Toque na tela para ouvir os outros jogadores.'); refresh(); });
       watchLevel(uid, st);
     };
     pc.oniceconnectionstatechange = () => { const s = pc.iceConnectionState; if (s === 'connected' || s === 'completed') { x.state = 'conectado'; route(x); } else if (s === 'checking') x.state = 'conectando'; else if (s === 'failed') x.state = 'falhou'; else if (s === 'disconnected') x.state = 'instável'; refresh(); };
@@ -218,7 +236,7 @@
     if (!list.length) return 'Você está na conversa. Esperando mais alguém entrar…';
     return list.map(p => {
       const nm = String(p.presence.name || 'Jogador').slice(0, 16), x = peers.get(p.by);
-      const st = !x ? 'conectando…' : x.state === 'conectado' ? `conectado ✓${x.route ? ' (' + x.route + ')' : ''}${talking.has(p.by) ? ' · falando' : ''}` : x.state === 'falhou' ? 'não conectou (rede bloqueando)' : x.state + '…';
+      const st = !x ? 'conectando…' : x.state === 'conectado' ? `conectado ✓${x.route ? ' (' + x.route + ')' : ''}${x.blocked ? ' · toque na tela para ouvir' : ''}${talking.has(p.by) ? ' · falando' : ''}` : x.state === 'falhou' ? 'não conectou (rede bloqueando)' : x.state + '…';
       return `${nm}: ${st}${p.presence.vmute ? ' · mudo' : ''}`;
     }).join(' · ');
   }
@@ -237,7 +255,7 @@
   // celulares só tocam áudio depois de um toque: a cada toque, garante que as vozes estão tocando
   document.addEventListener('pointerdown', () => {
     if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
-    peers.forEach(x => { if (x.audio && x.audio.paused) { const p = x.audio.play(); if (p && p.catch) p.catch(() => {}); } });
+    peers.forEach(x => { if (x.audio && x.audio.paused) { const p = x.audio.play(); if (p && p.then) p.then(() => { x.blocked = false; refresh(); }).catch(() => {}); } });
   }, true);
   window.GDVoice = { statusText, attach, detach, join, leave, toggle, setMuted, refresh, supported, get active() { return !!api; }, get joined() { return joined; }, get muted() { return muted; } };
 })();
