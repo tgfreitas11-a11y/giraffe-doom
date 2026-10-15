@@ -2,7 +2,7 @@
 (function () {
   const E = window.GD_ENGINE, B = window.GD_BOT, C = window.GD_CARDS;
   let ME = 0; // assento deste aparelho (no online pode ser outro)
-  const BOT_NAMES = ['Girafa Bot', 'Pescoçudo', 'Dona Mancha', 'Sr. Savana', 'Doom Jr.'];
+  const BOT_NAMES = ['Girafa Bot', 'Pescoçudo', 'Dona Mancha', 'Sr. Savana', 'Doom Jr.', 'Tia Acácia', 'Manchinha'];
   const $app = document.getElementById('app');
   const $fx = document.createElement('div'); $fx.className = 'fx'; document.body.appendChild($fx);
   const $stage = document.createElement('div'); $stage.className = 'stage'; document.body.appendChild($stage);
@@ -712,7 +712,7 @@
   // =====================================================================
   const NET = { mode: 'solo', ready: false, db: null, room: null, user: null, uid: null, owner: false,
     isHost: false, doc: null, ver: 0, incoming: null, queue: [], actN: 0, writing: Promise.resolve(), sentAt: 0, absent: {} };
-  const MAX_SEATS = 6;
+  const MAX_SEATS = 8;
   // ---------- versão instalável: salas com código no Firebase (net-firebase.js) ----------
   let watchdogOn = false;
   async function connectRoom(R) {
@@ -739,7 +739,7 @@
   }
   async function netJoin(code) {
     NET.why = 'busy'; refreshSetup();
-    try { const R = await window.GDNet.join(code); NET.autoJoin = true; await connectRoom(R); }
+    try { const R = await window.GDNet.join(code); NET.autoJoin = true; invite = null; await connectRoom(R); }
     catch (e) { console.error(e); toast(e && e.code === 'notfound' ? tS('notFound') : e && e.code === 'invalid' ? tS('invalid') : tS('netErr')); disconnectRoom(); }
   }
   async function initNet() {
@@ -770,10 +770,10 @@
 
   function onlineSetupHTML() {
     if (!NET.ready && NET.why === 'code') {
-      return `<div class="sectionlbl">${tS('online')}</div>
+      return `<div class="sectionlbl">${tS('online')}</div>${invite ? `<p class="note">📩 Você foi convidado para a sala <b>${esc(invite)}</b>. Escolha seu apelido lá em cima e toque em <b>${tS('enter')}</b>.</p>` : ''}
         <button class="btn ghost" id="netcreate"><span>${tS('create')}</span><small>${tS('host')}</small></button>
         <div class="field"><label for="netcode">${tS('codeLbl')}</label>
-          <div style="display:flex;gap:8px"><input id="netcode" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="${tS('codePh')}" style="flex:1;min-width:0;text-transform:uppercase;letter-spacing:.12em">
+          <div style="display:flex;gap:8px"><input id="netcode" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="${tS('codePh')}" value="${esc(invite || '')}" style="flex:1;min-width:0;text-transform:uppercase;letter-spacing:.12em">
           <button class="btn" id="netjoincode" style="flex:0 0 auto"><span>${tS('enter')}</span></button></div></div>`;
     }
     if (!NET.ready && NET.why === 'busy') return `<div class="sectionlbl">${tS('online')}</div><p class="note">${tS('connecting')}</p>`;
@@ -847,17 +847,19 @@
     const host = NET.owner;
     $app.innerHTML = `<div class="setup">
       <h1>Sala de espera</h1>
-      ${NET.code ? `<div class="field"><label>Código da sala</label><div style="font-family:var(--f-display);font-size:30px;letter-spacing:.2em;color:var(--bronze);user-select:all">${esc(NET.code)}</div></div>` : ''}
-      <p class="lede">${host && NET.code ? 'Passe este código para quem vai jogar. A pessoa abre o jogo, digita o código em <b>Código da sala</b> e toca em <b>Entrar</b>; ela aparece aqui. Se alguém sair durante a partida, todos voltam para esta sala e a partida recomeça.' : host ? 'Mande o link do jogo para quem vai jogar. Quando a pessoa abrir e tocar em <b>Entrar na sala de espera</b>, ela aparece aqui. Se alguém sair durante a partida, todos voltam para esta sala e a partida recomeça.' : `Você está na sala de espera de <b>${esc(D.hostName || 'anfitrião')}</b>. A partida começa quando o anfitrião tocar em Começar. Se alguém sair durante a partida, todos voltam para cá.`}</p>
+      ${NET.code ? `<div class="field"><label>Código da sala</label><div style="font-family:var(--f-display);font-size:30px;letter-spacing:.2em;color:var(--bronze);user-select:all">${esc(NET.code)}</div>
+        <div style="display:flex;gap:8px"><button class="btn" id="lshare" style="flex:1;justify-content:center"><span>📤 Compartilhar convite</span></button><button class="btn ghost" id="lcopy" style="flex:0 0 auto"><span>Copiar link</span></button></div></div>` : ''}
+      <p class="lede">${host && NET.code ? 'Toque em <b>Compartilhar convite</b> e mande o link para quem vai jogar: quem abrir cai direto nesta sala com o código preenchido (ou passe o código para digitar em <b>Código da sala</b>). Se alguém sair durante a partida, todos voltam para esta sala e a partida recomeça.' : host ? 'Mande o link do jogo para quem vai jogar. Quando a pessoa abrir e tocar em <b>Entrar na sala de espera</b>, ela aparece aqui. Se alguém sair durante a partida, todos voltam para esta sala e a partida recomeça.' : `Você está na sala de espera de <b>${esc(D.hostName || 'anfitrião')}</b>. A partida começa quando o anfitrião tocar em Começar. Se alguém sair durante a partida, todos voltam para cá.`}</p>
       <div class="field"><label>Na mesa (${people.length} de ${MAX_SEATS})</label>
         <div class="seatlist">${people.map(p => `<div class="seat" data-vuid="${esc(p.by)}"><span>🦒 ${esc(p.name)}</span><small>${p.by === D.host ? 'anfitrião' : ''}${p.me ? ' · você' : ''}</small></div>`).join('') || '<p class="note">Ninguém ainda.</p>'}
         ${host ? Array.from({ length: bots }, (_, i) => `<div class="seat bot"><span>🤖 ${BOT_NAMES[i]}</span><small>bot</small></div>`).join('') : ''}</div></div>
-      ${NET.code && window.GDVoice ? `<div class="field"><label>Conversa de voz</label><div style="display:flex;gap:8px"><button class="btn ghost voicebtn" data-voicebtn id="lvoice" style="flex:1;justify-content:center"></button><button class="btn ghost" data-voiceleave id="lvoiceleave" hidden style="flex:0 0 auto"><span>Sair da voz</span></button></div><p class="note" style="margin:0">Toque no microfone para entrar na conversa. Depois, toque de novo para ficar mudo.</p></div>` : ''}
-      ${host ? `<div class="field"><label>Bots para completar a mesa</label><div class="seg" id="lbots">${[0, 1, 2, 3, 4, 5].map(n => `<button data-n="${n}" class="${n === Math.min(prefs.bots, 5) ? 'on' : ''}" ${people.length + n > MAX_SEATS ? 'disabled' : ''}>${n}</button>`).join('')}</div></div>
+      ${NET.code && window.GDVoice ? `<div class="field"><label>Conversa de voz</label><div style="display:flex;gap:8px"><button class="btn ghost voicebtn" data-voicebtn id="lvoice" style="flex:1;justify-content:center"></button><button class="btn ghost" data-voiceleave id="lvoiceleave" hidden style="flex:0 0 auto"><span>Sair da voz</span></button></div><p class="note" style="margin:0">Toque no microfone para entrar na conversa. Depois, toque de novo para ficar mudo.</p><p class="note" style="margin:0" data-voicestatus></p></div>` : ''}
+      ${host ? `<div class="field"><label>Bots para completar a mesa</label><div class="seg" id="lbots">${[0, 1, 2, 3, 4, 5, 6, 7].map(n => `<button data-n="${n}" class="${n === Math.min(prefs.bots, 7) ? 'on' : ''}" ${people.length + n > MAX_SEATS ? 'disabled' : ''}>${n}</button>`).join('')}</div></div>
       <button class="btn" id="lstart" ${people.length + bots < 2 ? 'disabled' : ''}><span>Começar a partida</span><small>${people.length + bots} jogadores</small></button>
       <button class="btn ghost" id="lclose"><span>Fechar a mesa</span></button>` : `<div class="waiting"><span class="dots"><i></i><i></i><i></i></span> Esperando o anfitrião começar…</div><button class="btn ghost" id="lleave"><span>Sair da sala de espera</span></button>`}
     </div>`;
     const q = id => $app.querySelector(id);
+    if (q('#lshare')) { q('#lshare').onclick = () => shareInvite(NET.code); q('#lcopy').onclick = () => copyInvite(NET.code); }
     if (q('#lvoice')) { q('#lvoice').onclick = () => GDVoice.toggle(); q('#lvoiceleave').onclick = () => GDVoice.leave(); GDVoice.refresh(); }
     if (q('#lbots')) q('#lbots').onclick = e => { const n = e.target.dataset.n; if (n !== undefined && !e.target.disabled) { prefs.bots = +n; savePrefs(); renderLobby(); } };
     if (q('#lstart')) q('#lstart').onclick = () => hostStart(people, bots);
@@ -1088,7 +1090,7 @@
         ${saved && saved.winner === null ? `<button class="btn" id="resume"><span>${tS('resume')}</span><small>${tS('round')} ${Math.ceil(saved.turnNo / saved.players.length)}</small></button>` : ''}
         <div class="field"><label for="pname">${tS('nick')}</label><input id="pname" maxlength="16" autocomplete="nickname" placeholder="${tS('ph')}" value="${nickOk() ? esc(prefs.name) : ''}" aria-describedby="nickerr"><p class="fielderr" id="nickerr" hidden></p></div>
         <div class="field"><label>${tS('bots')}</label>
-          <div class="seg" id="bots">${[1, 2, 3, 4, 5].map(n => `<button data-n="${n}" class="${n === prefs.bots ? 'on' : ''}">${n}</button>`).join('')}</div>
+          <div class="seg" id="bots">${[1, 2, 3, 4, 5, 6, 7].map(n => `<button data-n="${n}" class="${n === prefs.bots ? 'on' : ''}">${n}</button>`).join('')}</div>
         </div>
         <div class="field"><label>${tS('pace')}</label>
           <div class="seg" id="speed">${[['lento', tS('calm')], ['normal', tS('normal')], ['rapido', tS('fast')]].map(([v, l]) => `<button data-v="${v}" class="${prefs.speed === v ? 'on' : ''}">${l}</button>`).join('')}</div>
@@ -1312,7 +1314,7 @@
     switch (s.type) {
       case 'rules': return `<h2>Como jogar</h2><div class="rules">
         <div><b>Objetivo.</b> Faça 5 pontos ou complete 3 cartas de objetivo. Você começa com 2 objetivos secretos e compra outro sempre que completa um.</div>
-        <div><b>Começo.</b> Cada jogador recebe 2 objetivos secretos, 3 cartas do bolo de cabeças (as cabeças e as girafas especiais) e 4 cartas do monte. <b>Com até 4 jogadores</b>, a partida usa só <b>metade das cartas</b>, sorteada a cada jogo: cada cabeça vem com o seu corpo, e cada tipo de carta (pescoços de cada cor, ataques, defesas…) entra pela metade. Com 5 ou 6 jogadores, entra o baralho inteiro.</div>
+        <div><b>Começo.</b> Cada jogador recebe 2 objetivos secretos, 3 cartas do bolo de cabeças (as cabeças e as girafas especiais) e 4 cartas do monte. <b>Com até 4 jogadores</b>, a partida usa só <b>metade das cartas</b>, sorteada a cada jogo: cada cabeça vem com o seu corpo, e cada tipo de carta (pescoços de cada cor, ataques, defesas…) entra pela metade. De 5 a 8 jogadores, entra o baralho inteiro.</div>
         <div><b>Girafas.</b> Uma girafa é cabeça + corpo do mesmo personagem, ou uma girafa especial (Girassauro, Girafarão, Girapeta e Crocorafa), que já vem inteira, <b>não recebe pescoços</b> e conta como <b>nível 1</b> nos objetivos. As cartas de fundo colorido (Girafclown e Mimicraffe) são <b>coringas</b>: a cabeça combina com qualquer corpo e o corpo com qualquer cabeça. Os corpos ficam na vitrine (3 abertos) ou chegam por troca e roubo.</div>
         <div><b>Pescoços.</b> Encaixe até 5 por girafa. O nível é a quantidade de pescoços e as cores contam para os objetivos.</div>
         <div><b>Seu turno.</b> 1) Baixe <b>1 girafa</b> ou encaixe <b>1 pescoço</b> (nunca os dois no mesmo turno: a girafa nova só recebe pescoço no turno seguinte). 2) Ataque e use ações. 3) Compre 1 carta do monte ou da vitrine — a compra encerra o turno. Se no turno você pegou um objetivo novo, não compra do monte: pode pegar um corpo da vitrine ou encerrar sem comprar. <b>Destino</b> e <b>Portal</b> substituem a compra e também encerram o turno. Com o Portal você pega qualquer carta do descarte; se escolher uma cabeça ou um corpo, leva a girafa completa (a outra parte vem junto, se estiver no descarte).</div>
@@ -1329,6 +1331,7 @@
         <button class="btn ghost" data-act="sound"><span>Som</span><small>${prefs.sound ? 'ligado' : 'desligado'}</small></button>
         <button class="btn ghost" data-act="rules"><span>Como jogar</span></button>
         ${window.GDVoice && GDVoice.joined ? `<button class="btn ghost" data-act="voiceleave"><span>Sair da conversa de voz</span></button>` : ''}
+        ${window.GDVoice && GDVoice.active ? `<p class="note" data-voicestatus>${esc(GDVoice.statusText())}</p>` : ''}
         ${NET.mode === 'online' ? (NET.isHost ? `<button class="btn ghost" data-act="tolobby"><span>Reiniciar na sala de espera</span><small>todos voltam para a sala</small></button><button class="btn ghost" data-act="endtable"><span>Fechar a mesa online</span><small>para todos</small></button>` : '') + `<button class="btn ghost" data-act="leaveonline"><span>Sair da mesa</span><small>a partida reinicia para todos</small></button>` : `<button class="btn ghost" data-act="newgame"><span>Abandonar e voltar ao início</span></button>`}</div>${closeBtn}`;
       case 'confirmnew': return `<h2>Abandonar a partida?</h2><p>A partida atual será perdida.</p><div class="btns"><button class="btn" data-act="reallynew"><span>Sim, voltar ao início</span></button></div>${closeBtn}`;
       case 'log': return `<h2>Histórico</h2><div class="loglist">${st.log.slice().reverse().map(l => `<div>${esc(l)}</div>`).join('')}</div>${closeBtn}`;
@@ -1580,10 +1583,10 @@
   // ---------- tela de apresentação ----------
   // ---------- idiomas da tela de apresentação ----------
   const SPLASH_I18N = {
-    pt: { tag: 'Monte girafas. Estique o pescoço. <b>Sobreviva ao Doom.</b>', start: 'Iniciar', sub: '2 a 6 jogadores · contra bots ou online', title: 'Giraffe Doom: o jogo da armadilha do pescoço' },
-    en: { tag: 'Build giraffes. Stretch the neck. <b>Survive the Doom.</b>', start: 'Start', sub: '2 to 6 players · vs bots or online', title: 'Giraffe Doom: The Neck Extension Trap Game' },
-    fr: { tag: 'Construis des girafes. Allonge le cou. <b>Survis au Doom.</b>', start: 'Commencer', sub: '2 à 6 joueurs · contre des bots ou en ligne', title: 'Giraffe Doom : le jeu du piège du cou' },
-    es: { tag: 'Arma jirafas. Estira el cuello. <b>Sobrevive al Doom.</b>', start: 'Empezar', sub: '2 a 6 jugadores · contra bots o en línea', title: 'Giraffe Doom: el juego de la trampa del cuello' },
+    pt: { tag: 'Monte girafas. Estique o pescoço. <b>Sobreviva ao Doom.</b>', start: 'Iniciar', sub: '2 a 8 jogadores · contra bots ou online', title: 'Giraffe Doom: o jogo da armadilha do pescoço' },
+    en: { tag: 'Build giraffes. Stretch the neck. <b>Survive the Doom.</b>', start: 'Start', sub: '2 to 8 players · vs bots or online', title: 'Giraffe Doom: The Neck Extension Trap Game' },
+    fr: { tag: 'Construis des girafes. Allonge le cou. <b>Survis au Doom.</b>', start: 'Commencer', sub: '2 à 8 joueurs · contre des bots ou en ligne', title: 'Giraffe Doom : le jeu du piège du cou' },
+    es: { tag: 'Arma jirafas. Estira el cuello. <b>Sobrevive al Doom.</b>', start: 'Empezar', sub: '2 a 8 jugadores · contra bots o en línea', title: 'Giraffe Doom: el juego de la trampa del cuello' },
   };
   // bandeiras desenhadas em SVG: aparecem iguais no celular, Mac e Windows (o Windows não mostra emoji de bandeira)
   const FLAG = {
@@ -1654,7 +1657,7 @@
         <div class="sp-cta">
           <p class="sp-tag">Monte girafas. Estique o pescoço. <b>Sobreviva ao Doom.</b></p>
           <button class="btn sp-start" id="spstart"><span>Iniciar</span></button>
-          <small class="sp-sub">2 a 6 jogadores · contra bots ou online</small>
+          <small class="sp-sub">2 a 8 jogadores · contra bots ou online</small>
         </div>
       </div>`;
     const sp = $app.querySelector('#splash');
@@ -1833,8 +1836,36 @@
   }
 
   // ---------- início ----------
+  // ---------- convites por link (…/giraffe-doom/?sala=CODIGO) ----------
+  const SITE_URL = 'https://tgfreitas11-a11y.github.io/giraffe-doom/';
+  let invite = null;
+  function readInvite(url) { try { const c = new URL(url).searchParams.get('sala'); return c ? c.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || null : null; } catch (e) { return null; } }
+  function applyInvite(c) {
+    if (!c || NET.code) return;
+    invite = c;
+    if (ui.view === 'splash' || ui.view === 'setup') { ui.view = 'setup'; renderSetup(); }
+    else toast(`Convite para a sala ${c}: saia da partida para entrar.`);
+  }
+  invite = readInvite(location.href);
+  try { const CapApp = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App; if (CapApp) { CapApp.getLaunchUrl().then(r => { const c = r && readInvite(r.url); if (c) applyInvite(c); }).catch(() => {}); CapApp.addListener('appUrlOpen', e => applyInvite(readInvite(e.url))); } } catch (e) {}
+  const inviteText = code => `Vem jogar Giraffe Doom comigo! Toque no link para entrar na minha sala (código ${code}):`;
+  async function shareInvite(code) {
+    const url = SITE_URL + '?sala=' + code, text = inviteText(code);
+    try {
+      const Sh = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share;
+      if (Sh) { await Sh.share({ title: 'Giraffe Doom', text, url, dialogTitle: 'Convidar para a sala' }); return; }
+      if (navigator.share) { await navigator.share({ title: 'Giraffe Doom', text, url }); return; }
+    } catch (e) { if (e && (e.name === 'AbortError' || /cancel/i.test(e.message || ''))) return; }
+    copyInvite(code);
+  }
+  async function copyInvite(code) {
+    const all = inviteText(code) + ' ' + SITE_URL + '?sala=' + code;
+    try { await navigator.clipboard.writeText(all); toast('Link copiado! Cole na conversa com quem vai jogar.'); }
+    catch (e) { const t = document.createElement('textarea'); t.value = all; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); toast('Link copiado! Cole na conversa com quem vai jogar.'); } catch (e2) { toast(all); } t.remove(); }
+  }
   const boot = data => {
-    if (data && data.st) { st = data.st; V = st; lastSeq = st.evSeq || 0; ui.view = 'game'; pump(); }
+    if (data && data.st && !invite) { st = data.st; V = st; lastSeq = st.evSeq || 0; ui.view = 'game'; pump(); }
+    else if (invite) { ui.view = 'setup'; renderSetup(); }
     else renderSplash();
     initNet();
   };

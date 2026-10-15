@@ -18,6 +18,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- links de convite (https://tgfreitas11-a11y.github.io/giraffe-doom/?sala=CODIGO) podem abrir o app -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="tgfreitas11-a11y.github.io" android:pathPrefix="/giraffe-doom" />
+            </intent-filter>
         </activity>
 
         <provider

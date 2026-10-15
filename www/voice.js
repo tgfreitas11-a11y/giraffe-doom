@@ -3,8 +3,12 @@
 (function () {
   const ICE = [
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-    { urls: 'stun:stun.cloudflare.com:3478' }
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    // retransmissão pública e gratuita (para redes que não deixam os aparelhos se falarem direto)
+    { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }
   ];
+  // permite trocar/adicionar servidores sem mexer no código (ex.: window.GD_TURN = [{urls, username, credential}])
+  const iceServers = () => (window.GD_TURN || []).concat(ICE);
   let api = null, room = null, notify = () => {};
   let joined = false, session = null, stream = null, muted = false, joining = false;
   const peers = new Map();      // uid -> { pc, rs (sessão do outro), audio, pend: [] , seen: Set }
@@ -86,8 +90,8 @@
   }
 
   function makePeer(uid, rs) {
-    const pc = new RTCPeerConnection({ iceServers: ICE });
-    const x = { pc, rs, audio: null, pend: [], seen: new Set() };
+    const pc = new RTCPeerConnection({ iceServers: iceServers() });
+    const x = { pc, rs, audio: null, pend: [], seen: new Set(), state: 'conectando', route: '' };
     peers.set(uid, x);
     if (stream) stream.getTracks().forEach(t => pc.addTrack(t, stream));
     pc.onicecandidate = e => { if (e.candidate) send(uid, rs, { t: 'ice', d: JSON.stringify(e.candidate) }); };
@@ -97,6 +101,7 @@
       x.audio.srcObject = st; const pl = x.audio.play(); if (pl && pl.catch) pl.catch(() => {});
       watchLevel(uid, st);
     };
+    pc.oniceconnectionstatechange = () => { const s = pc.iceConnectionState; if (s === 'connected' || s === 'completed') { x.state = 'conectado'; route(x); } else if (s === 'checking') x.state = 'conectando'; else if (s === 'failed') x.state = 'falhou'; else if (s === 'disconnected') x.state = 'instável'; refresh(); };
     pc.onconnectionstatechange = () => {
       const s = pc.connectionState;
       if (s === 'failed') {
@@ -107,6 +112,16 @@
       refresh();
     };
     return x;
+  }
+  // descobre se a conversa vai direto ou pela retransmissão (para o diagnóstico)
+  async function route(x) {
+    try {
+      const st = await x.pc.getStats(); let pair = null; const c = {};
+      st.forEach(r => { if (r.type === 'candidate-pair' && (r.selected || r.nominated) && r.state === 'succeeded') pair = r; if (r.type === 'local-candidate' || r.type === 'remote-candidate') c[r.id] = r; });
+      const l = pair && c[pair.localCandidateId], rm = pair && c[pair.remoteCandidateId];
+      x.route = l && rm ? ((l.candidateType === 'relay' || rm.candidateType === 'relay') ? 'retransmissão' : 'direto') : '';
+      refresh();
+    } catch (e) {}
   }
   function closePeer(uid) {
     const x = peers.get(uid); if (!x) return;
@@ -176,7 +191,7 @@
       if (on !== talking.has(key)) { on ? talking.add(key) : talking.delete(key); changed = true; }
     });
     if (!meters.size) { clearInterval(meter); meter = null; }
-    if (changed) paintTalking();
+    if (changed) { paintTalking(); document.querySelectorAll('[data-voicestatus]').forEach(el => { el.textContent = statusText(); }); }
   }
   function paintTalking() {
     document.querySelectorAll('[data-vuid]').forEach(el => el.classList.toggle('talking', talking.has(el.dataset.vuid)));
@@ -196,7 +211,19 @@
     if (!joined) return 'Entrar na conversa de voz';
     return muted ? 'Microfone desligado: toque para falar' : 'Microfone ligado: toque para ficar mudo';
   }
+  function statusText() {
+    if (!api) return '';
+    if (!joined) { const n = others().length; return n ? `${n} na conversa. Toque no microfone para entrar.` : 'Ninguém na conversa ainda.'; }
+    const list = others();
+    if (!list.length) return 'Você está na conversa. Esperando mais alguém entrar…';
+    return list.map(p => {
+      const nm = String(p.presence.name || 'Jogador').slice(0, 16), x = peers.get(p.by);
+      const st = !x ? 'conectando…' : x.state === 'conectado' ? `conectado ✓${x.route ? ' (' + x.route + ')' : ''}${talking.has(p.by) ? ' · falando' : ''}` : x.state === 'falhou' ? 'não conectou (rede bloqueando)' : x.state + '…';
+      return `${nm}: ${st}${p.presence.vmute ? ' · mudo' : ''}`;
+    }).join(' · ');
+  }
   function refresh() {
+    document.querySelectorAll('[data-voicestatus]').forEach(el => { el.textContent = statusText(); el.hidden = !api; });
     document.querySelectorAll('[data-voicebtn]').forEach(el => {
       el.hidden = !api;
       el.textContent = label(); el.title = title(); el.setAttribute('aria-label', title());
@@ -207,5 +234,10 @@
     paintTalking();
   }
 
-  window.GDVoice = { attach, detach, join, leave, toggle, setMuted, refresh, supported, get active() { return !!api; }, get joined() { return joined; }, get muted() { return muted; } };
+  // celulares só tocam áudio depois de um toque: a cada toque, garante que as vozes estão tocando
+  document.addEventListener('pointerdown', () => {
+    if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
+    peers.forEach(x => { if (x.audio && x.audio.paused) { const p = x.audio.play(); if (p && p.catch) p.catch(() => {}); } });
+  }, true);
+  window.GDVoice = { statusText, attach, detach, join, leave, toggle, setMuted, refresh, supported, get active() { return !!api; }, get joined() { return joined; }, get muted() { return muted; } };
 })();
