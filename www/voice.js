@@ -126,7 +126,8 @@
 
   function makePeer(uid, rs) {
     const pc = new RTCPeerConnection({ iceServers: iceServers() });
-    const x = { pc, rs, audio: null, pend: [], seen: new Set(), state: 'conectando', route: '', stage: 'negociando', lc: 0, rc: 0 };
+    const x = { pc, rs, audio: null, pend: [], seen: new Set(), state: 'conectando', route: '', stage: 'negociando', lc: 0, rc: 0, inKB: 0, outKB: 0 };
+    ensureStats();
     peers.set(uid, x);
     if (stream) stream.getTracks().forEach(t => pc.addTrack(t, stream));
     pc.onicecandidate = e => { if (e.candidate) { x.lc++; send(uid, rs, { t: 'ice', d: JSON.stringify(e.candidate) }); } };
@@ -135,7 +136,6 @@
       if (!x.audio) { x.audio = new Audio(); x.audio.autoplay = true; x.audio.setAttribute('playsinline', ''); x.audio.style.display = 'none'; document.body.appendChild(x.audio); }
       x.audio.srcObject = st; x.audio.muted = false; x.audio.volume = 1;
       const pl = x.audio.play(); if (pl && pl.catch) pl.catch(() => { x.blocked = true; notify('Toque na tela para ouvir os outros jogadores.'); refresh(); });
-      watchLevel(uid, st);
     };
     pc.oniceconnectionstatechange = () => { const s = pc.iceConnectionState; if (s === 'connected' || s === 'completed') { x.state = 'conectado'; route(x); } else if (s === 'checking') x.state = 'conectando'; else if (s === 'failed') x.state = 'falhou'; else if (s === 'disconnected') x.state = 'instável'; refresh(); };
     pc.onconnectionstatechange = () => {
@@ -186,7 +186,7 @@
         if (x && x.rs !== m.s) { closePeer(uid); x = null; }
         if (!x) { await api.clearTo(uid); x = makePeer(uid, m.s); }
         x.seen.add(key);
-        x.pend.push(...(early.get(uid) || [])); early.delete(uid);
+        x.rc += (early.get(uid) || []).length; x.pend.push(...(early.get(uid) || [])); early.delete(uid);
         await x.pc.setRemoteDescription(JSON.parse(m.d)); x.stage = 'testando rotas';
         const a = await x.pc.createAnswer();
         await x.pc.setLocalDescription(a);
@@ -229,6 +229,34 @@
     if (!meters.size) { clearInterval(meter); meter = null; }
     if (changed) { paintTalking(); document.querySelectorAll('[data-voicestatus]').forEach(el => { el.textContent = statusText(); }); }
   }
+  // nível e tráfego das vozes recebidas, pelas estatísticas da conexão (funciona também no iPhone)
+  let statTimer = null;
+  function ensureStats() { if (!statTimer) statTimer = setInterval(pollStats, 700); }
+  async function pollStats() {
+    if (!peers.size) { clearInterval(statTimer); statTimer = null; return; }
+    let changed = false;
+    for (const [uid, x] of peers) {
+      try {
+        const st = await x.pc.getStats(); let inB = 0, outB = 0, lvl = null;
+        st.forEach(r => {
+          if (r.type === 'inbound-rtp' && (r.kind === 'audio' || r.mediaType === 'audio')) { inB += r.bytesReceived || 0; if (typeof r.audioLevel === 'number') lvl = r.audioLevel; }
+          if (r.type === 'outbound-rtp' && (r.kind === 'audio' || r.mediaType === 'audio')) outB += r.bytesSent || 0;
+          if (r.type === 'track' && r.remoteSource && typeof r.audioLevel === 'number') lvl = r.audioLevel;
+        });
+        x.inKB = Math.round(inB / 1024); x.outKB = Math.round(outB / 1024);
+        const on = lvl !== null && lvl > 0.02;
+        if (on !== talking.has(uid)) { on ? talking.add(uid) : talking.delete(uid); changed = true; }
+      } catch (e) {}
+    }
+    paintTalking(); document.querySelectorAll('[data-voicestatus]').forEach(el => { el.textContent = statusText(); });
+  }
+  function liveState(x) {
+    const c = x.pc.connectionState, i = x.pc.iceConnectionState;
+    if (c === 'connected' || i === 'connected' || i === 'completed') return 'conectado';
+    if (c === 'failed' || i === 'failed') return 'falhou';
+    if (i === 'disconnected' || c === 'disconnected') return 'instável';
+    return 'conectando';
+  }
   function paintTalking() {
     document.querySelectorAll('[data-vuid]').forEach(el => el.classList.toggle('talking', talking.has(el.dataset.vuid)));
     document.querySelectorAll('[data-voicebtn]').forEach(el => el.classList.toggle('talking', talking.size > 0));
@@ -255,7 +283,8 @@
     if (!list.length) return 'Você está na conversa. Esperando mais alguém entrar… · ' + rl;
     return list.map(p => {
       const nm = String(p.presence.name || 'Jogador').slice(0, 16), x = peers.get(p.by);
-      const st = !x ? (api.uid < p.by ? 'preparando…' : 'esperando o outro aparelho…') : x.state === 'conectando' ? `${x.stage} (${x.lc}/${x.rc})…` : x.state === 'conectado' ? `conectado ✓${x.route ? ' (' + x.route + ')' : ''}${x.blocked ? ' · toque na tela para ouvir' : ''}${talking.has(p.by) ? ' · falando' : ''}` : x.state === 'falhou' ? 'não conectou (rede bloqueando)' : x.state + '…';
+      if (x) { const ls = liveState(x); if (ls !== x.state) { x.state = ls; if (ls === 'conectado' && !x.route) route(x); } }
+      const st = !x ? (api.uid < p.by ? 'preparando…' : 'esperando o outro aparelho…') : x.state === 'conectando' ? `${x.stage} (${x.lc}/${x.rc})…` : x.state === 'conectado' ? `conectado ✓${x.route ? ' (' + x.route + ')' : ''} ↓${x.inKB}KB ↑${x.outKB}KB${x.blocked ? ' · toque na tela para ouvir' : ''}${talking.has(p.by) ? ' · falando' : ''}` : x.state === 'falhou' ? 'não conectou (rede bloqueando)' : x.state + '…';
       return `${nm}: ${st}${p.presence.vmute ? ' · mudo' : ''}`;
     }).join(' · ') + ' · ' + rl;
   }
