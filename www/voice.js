@@ -13,6 +13,7 @@
     // serviço próprio, se configurado (ex.: conta grátis na Metered): window.GD_TURN_API = 'https://SEUAPP.metered.live/api/v1/turn/credentials?apiKey=...'
     if (window.GD_TURN_API) { try { const r = await fetch(window.GD_TURN_API); if (r.ok) out.push(...(await r.json())); } catch (e) {} }
     if (window.GD_TURN) out.push(...window.GD_TURN);
+    if (out.length) return out; // com servidor próprio, não precisa do público
     try {
       const user = Math.floor(Date.now() / 1000) + 24 * 3600 + ':giraffedoom';
       const enc = new TextEncoder();
