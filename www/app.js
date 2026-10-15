@@ -472,7 +472,8 @@
       removeFromHand(e.pid, e.card); render();
       const pieceEl = $app.querySelector(`[data-piece="${e.back}"]`); const to = rectOf(pieceEl);
       const gn = esc(NM(e.slot === 'head' ? e.card : (V.players[e.pid].giraffes.find(g => g.id === e.gid) || {}).head || e.card));
-      if (e.pid !== ME) await spotlight(e.card, `${who(e.pid)} trocou o coringa <b>${esc(NM(e.back))}</b> pela carta certa <b>${esc(NM(e.card))}</b>`, from, to, { label: 'Troca do coringa' });
+      const toWild = E.CARDS[e.card].wild;
+      if (e.pid !== ME) await spotlight(e.card, toWild ? `${who(e.pid)} pôs o coringa <b>${esc(NM(e.card))}</b> no lugar de <b>${esc(NM(e.back))}</b>` : `${who(e.pid)} trocou o coringa <b>${esc(NM(e.back))}</b> pela carta certa <b>${esc(NM(e.card))}</b>`, from, to, { label: 'Troca do coringa' });
       else await fly(e.card, from, to, { dur: 700 });
       const g = V.players[e.pid].giraffes.find(x => x.id === e.gid); if (g) g[e.slot] = e.card;
       ['dmg', 'wounds'].forEach(key => { if (V[key] && V[key][e.back]) { V[key][e.card] = V[key][e.back]; delete V[key][e.back]; } });
@@ -480,7 +481,7 @@
       sfx.place(); render();
       await fly(e.back, to, e.pid === ME ? handRect() : chipRect(e.pid), { dur: 650 });
       addToHand(e.pid, e.back); render();
-      narr(`${who(e.pid)} colocou <b>${esc(NM(e.card))}</b> no lugar do coringa <b>${esc(NM(e.back))}</b>, que voltou para a mão. Neste turno, nada mais de girafas ou pescoços.`, '🃏');
+      narr(toWild ? `${who(e.pid)} pôs o coringa <b>${esc(NM(e.card))}</b> no lugar de <b>${esc(NM(e.back))}</b>, que voltou para a mão. Neste turno, nada mais de girafas ou pescoços.` : `${who(e.pid)} colocou <b>${esc(NM(e.card))}</b> no lugar do coringa <b>${esc(NM(e.back))}</b>, que voltou para a mão. Neste turno, nada mais de girafas ou pescoços.`, '🃏');
     },
     async build(e) {
       setFocus(e.pid);
@@ -538,7 +539,7 @@
         await spotlight(e.card, `${who(e.pid)} pegou o corpo de <b>${esc(NM(e.card))}</b> da vitrine`, from, dst, { label: 'Corpo · vitrine' });
         V.market[e.idx] = st.market[e.idx];
         addToHand(e.pid, e.card); render();
-        if (V.market[e.idx]) { const nm = V.market[e.idx]; await spotlight(nm, `Novo corpo na vitrine: <b>${esc(NM(nm))}</b><div class="expl">Qualquer jogador pode pegá-lo como compra.</div>`, deckRect(), rectOf($app.querySelector(`[data-market="${e.idx}"]`)), { label: 'Vitrine', flip: true }); }
+        if (V.market[e.idx]) { const nm = V.market[e.idx]; await spotlight(nm, `Novo corpo na vitrine: <b>${esc(NM(nm))}</b><div class="expl">Quem tiver a cabeça de ${esc(NM(nm))} na mão (ou na mesa com um corpo coringa) pode pegá-lo como compra.</div>`, deckRect(), rectOf($app.querySelector(`[data-market="${e.idx}"]`)), { label: 'Vitrine', flip: true }); }
       }
     },
     async bomb(e) {
@@ -1190,7 +1191,7 @@
         <div class="row">
           <div class="vgroup"><button class="deck objpile" id="objpile" title="Monte de objetivos"><span><b>${(S.objDeck || []).length}</b></span></button><div class="mini-lbl">objetivos</div></div>
           <div class="vgroup"><button class="deck pile ${myTurn ? 'go' : ''}" id="deck"><span><b>${S.deck.length}</b>monte</span></button><div class="mini-lbl">comprar</div></div>
-          <div class="vgroup"><div class="row" style="padding:0;gap:6px">${S.market.map((b, i) => b ? `<button class="card sm ${E.hasHeadFor(st, ME, b) ? 'canbuy' : ''}" data-market="${i}" style="background-image:url(${img(b)})" aria-label="Corpo ${esc(NM(b))}">${E.hasHeadFor(st, ME, b) ? '<span class="tag">tenho a cabeça</span>' : ''}</button>` : `<div class="deck" style="opacity:.3"></div>`).join('')}</div><div class="mini-lbl">vitrine de corpos</div></div>
+          <div class="vgroup"><div class="row" style="padding:0;gap:6px">${S.market.map((b, i) => b ? `<button class="card sm ${E.canTakeBody(st, ME, b) ? 'canbuy' : 'nobuy'}" data-market="${i}" style="background-image:url(${img(b)})" aria-label="Corpo ${esc(NM(b))}">${E.canTakeBody(st, ME, b) ? `<span class="tag">${E.hasHeadFor(st, ME, b) ? 'tenho a cabeça' : 'troca o coringa'}</span>` : ''}</button>` : `<div class="deck" style="opacity:.3"></div>`).join('')}</div><div class="mini-lbl">vitrine de corpos</div></div>
           <div class="sep"></div>
           <div class="vgroup"><button class="deck" id="discardbtn" style="${S.discard.length ? `background:url(${img(S.discard[S.discard.length - 1])}) center/cover` : ''}"><span>${S.discard.length ? '' : '<b>0</b>'}</span></button><div class="mini-lbl">descarte ${S.discard.length}</div></div>
         </div>
@@ -1208,13 +1209,26 @@
   }
   // girafas minhas onde esta carta pode substituir um coringa
   function swapTargets(id) {
-    const c = E.CARDS[id]; if (!c || c.wild || !['head', 'body'].includes(c.kind)) return [];
+    const c = E.CARDS[id]; if (!c || !['head', 'body'].includes(c.kind)) return [];
+    // coringa na mão: pode entrar no lugar da carta certa; carta certa: entra no lugar do coringa
+    if (c.wild) return P(ME).giraffes.filter(g => !g.special && E.CARDS[g[c.kind]] && !E.CARDS[g[c.kind]].wild);
     return P(ME).giraffes.filter(g => !g.special && E.CARDS[g[c.kind]] && E.CARDS[g[c.kind]].wild && (() => { const o = E.CARDS[c.kind === 'head' ? g.body : g.head]; return o.wild || o.match === c.match; })());
+  }
+  const swapWhy = () => !E.canBuild(st) ? 'só antes de atacar' : st.swapped ? 'já trocou neste turno' : (st.built || st.neckPlayed) ? 'você já baixou neste turno' : st.played ? 'só como primeira jogada do turno' : '';
+  // trocas possíveis direto pela girafa da mesa (tocando no nome dela)
+  function giraffeSwapHTML(g) {
+    if (g.special) return '';
+    const opts = P(ME).hand.filter(id => swapTargets(id).includes(g));
+    if (!opts.length) return '';
+    const live = st.turn === ME && !st.pending && !ui.busy;
+    const why = !live ? 'só na sua vez' : swapWhy();
+    return `<div class="sectionlbl">Trocar carta</div><div class="btns">` + opts.map(id => { const kd = K(id);
+      return `<button class="btn ${why ? 'ghost' : ''}" data-swapg='${JSON.stringify({ cid: id, gid: g.id })}' ${why ? 'disabled' : ''}><span>Pôr ${kd === 'head' ? 'a cabeça' : 'o corpo'} ${esc(NM(id))} no lugar ${kd === 'head' ? 'da cabeça' : 'do corpo'} ${esc(NM(g[kd]))}</span><small>${why || esc(NM(g[kd])) + ' volta para a mão'}</small></button>`; }).join('') + `</div><p class="note">Fazendo a troca, neste turno você não baixa mais girafas nem pescoços.</p>`;
   }
   function playableShallow(id) {
     const kd = K(id), me = P(ME);
     if (['defense', 'interrupt', 'super', 'bomb'].includes(kd)) return false;
-    if (kd === 'head' || kd === 'body') return E.canBuild(st) && !st.built && !st.neckPlayed && !st.swapped && (me.hand.some(x => C.pairs(E.CARDS[x], E.CARDS[id])) || swapTargets(id).some(g => g.born !== st.turnNo));
+    if (kd === 'head' || kd === 'body') return E.canBuild(st) && !st.built && !st.neckPlayed && !st.swapped && (me.hand.some(x => C.pairs(E.CARDS[x], E.CARDS[id])) || (!st.played && swapTargets(id).length > 0));
     if (kd === 'attack' || kd === 'poison') return me.giraffes.length > 0 && st.players.some(p => p.idx !== ME && p.giraffes.length && E.targetable(st, p.idx, ME));
     if (kd === 'special') return E.canBuild(st) && !st.built && !st.neckPlayed && !st.swapped;
     if (kd === 'neck') return E.canBuild(st) && !st.neckPlayed && !st.built && !st.swapped && me.giraffes.some(g => !g.special && g.necks.length < E.MAX_NECKS);
@@ -1295,11 +1309,11 @@
         <div><b>Girafas.</b> Uma girafa é cabeça + corpo do mesmo personagem, ou uma girafa especial (Girassauro, Girafarão, Girapeta e Crocorafa), que já vem inteira, <b>não recebe pescoços</b> e conta como <b>nível 1</b> nos objetivos. As cartas de fundo colorido (Girafclown e Mimicraffe) são <b>coringas</b>: a cabeça combina com qualquer corpo e o corpo com qualquer cabeça. Os corpos ficam na vitrine (3 abertos) ou chegam por troca e roubo.</div>
         <div><b>Pescoços.</b> Encaixe até 5 por girafa. O nível é a quantidade de pescoços e as cores contam para os objetivos.</div>
         <div><b>Seu turno.</b> 1) Baixe <b>1 girafa</b> ou encaixe <b>1 pescoço</b> (nunca os dois no mesmo turno: a girafa nova só recebe pescoço no turno seguinte). 2) Ataque e use ações. 3) Compre 1 carta do monte ou da vitrine — a compra encerra o turno. Se no turno você pegou um objetivo novo, não compra do monte: pode pegar um corpo da vitrine ou encerrar sem comprar. <b>Destino</b> e <b>Portal</b> substituem a compra e também encerram o turno. Com o Portal você pega qualquer carta do descarte; se escolher uma cabeça ou um corpo, leva a girafa completa (a outra parte vem junto, se estiver no descarte).</div>
-        <div><b>Coringas.</b> Girafalhaço e Mimicarafa combinam com qualquer girafa. Se você tem uma girafa com coringa na mesa, pode usar a <b>primeira jogada</b> do turno para colocar a carta certa no lugar dele: o coringa volta para a sua mão, mas nesse turno você não baixa mais girafas nem pescoços.</div>
+        <div><b>Coringas.</b> Girafalhaço e Mimicarafa combinam com qualquer girafa. A troca vale nos dois sentidos: na <b>primeira jogada</b> do turno você pode pôr a carta certa no lugar do coringa ou o coringa no lugar da carta certa, e a carta que sai volta para a mão. Fazendo a troca, você não baixa mais girafa nem pescoço nesse turno. Também dá para trocar tocando no nome da girafa na mesa.</div>
         <div><b>Combate.</b> Para atacar você precisa ter pelo menos uma girafa na mesa, e só dá para atacar quem também tem girafa. Quem ataca escolhe o oponente, a girafa e qual pescoço acertar; a cabeça só pode ser atacada quando a girafa não tem pescoços. Se um pescoço do meio quebrar, os de cima descem. Para destruir uma peça, os danos do mesmo turno precisam somar a defesa dela. Se a cabeça cair, a girafa inteira cai.</div>
         <div><b>Campo minado.</b> As Evento Doom (4, ou 2 em partidas de até 4 jogadores) estão na metade de baixo do monte. Quem comprar leva 3 pontos de dano na girafa mais alta, somados de cima para baixo (ex.: 3 pescoços de defesa 1, ou 1 de defesa 3).</div>
         <div><b>Reações.</b> Defesa devolve a ação a quem jogou, e quem se defendeu escolhe onde o revide acerta. Pare! cancela. Pare Agora! (Sai Pra Lá) cancela tudo e ninguém responde.</div>
-        <div><b>Vitrine.</b> Qualquer corpo da vitrine pode ser comprado, mesmo sem a cabeça na mão. Não há limite de cartas na mão.</div>
+        <div><b>Vitrine.</b> Só dá para pegar um corpo da vitrine se você tiver a cabeça dessa girafa na mão, ou se ela já estiver baixada na sua mesa com um corpo coringa. Não há limite de cartas na mão.</div>
         <div><b>Ritmo.</b> Cada carta jogada, comprada ou revelada fica ampliada até você tocar na tela. No menu dá para mudar isso.</div></div>${closeBtn}`;
       case 'menu': return `<h2>Menu</h2>
         <div class="field"><label>Ritmo dos adversários</label><div class="seg" id="speedm">${[['lento', 'Calmo'], ['normal', 'Normal'], ['rapido', 'Rápido']].map(([v, l]) => `<button data-v="${v}" class="${prefs.speed === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>
@@ -1325,7 +1339,7 @@
         const has = E.canTakeBody(st, ME, id);
         const can = has && !ui.busy && st.turn === ME && !st.pending;
         return `<span class="kind">Corpo · vitrine</span><h2>${esc(NM(id))}</h2>${cardBig(id)}
-          <p>${E.hasHeadFor(st, ME, id) ? 'Você tem a cabeça desta girafa! Pegar o corpo conta como a sua compra e encerra o turno. Na próxima vez, junte os dois e baixe a girafa.' : `Pegar este corpo conta como a sua compra e encerra o turno. Você ainda não tem a cabeça de ${esc(NM(id))} na mão.`}</p>
+          <p>${E.hasHeadFor(st, ME, id) ? 'Você tem a cabeça desta girafa! Pegar o corpo conta como a sua compra e encerra o turno. Na próxima vez, junte os dois e baixe a girafa.' : E.hasWildBodyFor(st, ME, id) ? 'A cabeça desta girafa está na sua mesa com um corpo coringa. Pegar este corpo conta como a sua compra e encerra o turno; depois você pode trocar o coringa por ele.' : `Você só pode pegar este corpo se tiver a cabeça de ${esc(NM(id))} na mão, ou baixada na sua mesa com um corpo coringa.`}</p>
           <div class="btns">${can ? `<button class="btn" data-act="drawmarket"><span>Pegar este corpo e encerrar</span></button>` : ''}</div>${closeBtn}`;
       }
       case 'card': return cardSheet(s);
@@ -1339,7 +1353,7 @@
         const top = E.topPiece(g);
         return `<span class="kind">${s.pid === ME ? 'Sua girafa' : 'Girafa de ' + esc(p.name)}</span><h2>${esc(NM(headId))}</h2>
           <p>${g.special ? 'Girafa inteira numa carta só.' : `Nível ${g.necks.length}${g.necks.length ? ' · ' + g.necks.map(n => cico(E.CARDS[n].color)).join('') : ''}`} · topo ${dicons(top.def, hurtOf(st, top.id), 'inl')}</p>
-          <div class="grid-cards gfull">${list.map(([id, lbl]) => `<div class="gf"><div class="card" style="background-image:url(${img(id)})">${hurtOf(st, id) ? `<span class="hpbadge">${hurtOf(st, id)}/${E.CARDS[id].def}</span>` : ''}</div><div class="mini-lbl">${lbl}</div></div>`).join('')}</div>${closeBtn}`;
+          <div class="grid-cards gfull">${list.map(([id, lbl]) => `<div class="gf"><div class="card" style="background-image:url(${img(id)})">${hurtOf(st, id) ? `<span class="hpbadge">${hurtOf(st, id)}/${E.CARDS[id].def}</span>` : ''}</div><div class="mini-lbl">${lbl}</div></div>`).join('')}</div>${s.pid === ME ? giraffeSwapHTML(g) : ''}${closeBtn}`;
       }
       case 'react': {
         const pd = st.pending; if (!pd || pd.type !== 'react') return closeBtn;
@@ -1421,9 +1435,9 @@
       case 'head': case 'body': {
         const pairsIn = me.hand.filter(x => C.pairs(E.CARDS[x], c));
         const sw = swapTargets(id);
-        const swapHTML = sw.length ? `<div class="sectionlbl">Trocar o coringa</div>` + sw.map(g => {
-          const why = !E.canBuild(st) ? 'só antes de atacar' : st.swapped ? 'já trocou neste turno' : (st.built || st.neckPlayed) ? 'você já baixou neste turno' : st.played ? 'só como primeira jogada do turno' : g.born === st.turnNo ? 'só no próximo turno' : '';
-          return `<button class="btn ${why ? 'ghost' : ''}" data-go='${JSON.stringify({ swap: g.id })}' ${why ? 'disabled' : ''}><span>Colocar no lugar de ${esc(NM(g[kd]))}</span><small>${why || 'o coringa volta para a mão'}</small></button>`;
+        const swapHTML = sw.length ? `<div class="sectionlbl">${E.CARDS[id].wild ? 'Pôr o coringa numa girafa' : 'Trocar o coringa'}</div>` + sw.map(g => {
+          const why = swapWhy();
+          return `<button class="btn ${why ? 'ghost' : ''}" data-go='${JSON.stringify({ swap: g.id })}' ${why ? 'disabled' : ''}><span>Colocar no lugar de ${esc(NM(g[kd]))}</span><small>${why || (E.CARDS[id].wild ? esc(NM(g[kd])) + ' volta para a mão' : 'o coringa volta para a mão')}</small></button>`;
         }).join('') + `<p class="note">Trocando o coringa, neste turno você não baixa mais girafas nem pescoços.</p>` : '';
         if (st.swapped) body = `<p>Neste turno você já trocou um coringa: não dá mais para baixar girafas nem pescoços.</p>`;
         else if (!E.canBuild(st)) body = `<p>Você já atacou neste turno. Girafas só podem ser baixadas antes de atacar.</p>`;
@@ -1545,6 +1559,7 @@
     on('[data-react]', b => act({ t: 'respond', cid: b.dataset.react || null }));
     on('[data-destiny]', b => act({ t: 'destiny', i: +b.dataset.destiny }));
     on('[data-sd]', b => act({ t: 'sd', gid: b.dataset.sd }));
+    on('[data-swapg]', b => { const o = JSON.parse(b.dataset.swapg); act({ t: 'play', cid: o.cid, p: { swap: o.gid } }); });
     on('[data-rf]', b => { const o = JSON.parse(b.dataset.rf); act({ t: 'rf', gid: o.gid, piece: o.piece }); });
     on('[data-objpick]', b => act({ t: 'objpick', i: +b.dataset.objpick }));
     on('[data-hl]', b => { const id = b.dataset.hl; s.sel = s.sel.includes(id) ? s.sel.filter(x => x !== id) : s.sel.concat(id).slice(-st.pending.n); renderSheet(); });

@@ -291,10 +291,14 @@
       if (st.swapped) return err(SWAPPED);
       if (st.built >= 1 || st.neckPlayed >= 1) return err('Neste turno você já baixou girafa ou pescoço: a troca do coringa fica para o próximo turno.');
       if (st.played > 0) return err('A troca do coringa precisa ser a primeira jogada do turno.');
-      if (c.wild) return err('Use a carta certa (não coringa) para trocar.');
       const g = p.giraffes.find(x => x.id === params.swap);
       if (!g || g.special) return err('Escolha uma girafa sua.');
       const slot = k, other = k === 'head' ? g.body : g.head;
+      // a troca vale nos dois sentidos: carta certa no lugar do coringa, ou coringa no lugar da carta certa
+      if (c.wild) {
+        if (card(g[slot]).wild) return err('Essa peça já é coringa.');
+        return { ok: true };
+      }
       if (!card(g[slot]).wild) return err(`Essa girafa não tem ${k === 'head' ? 'cabeça' : 'corpo'} coringa.`);
       if (!card(other).wild && card(other).match !== c.match) return err('Essa carta não é da mesma girafa.');
       return { ok: true };
@@ -385,7 +389,7 @@
       p.poisons.forEach(po => { if (po.piece === back) po.piece = cid; });
       st.swapped = true;
       ev(st, { t: 'wildswap', pid, gid: g.id, card: cid, back, slot: k });
-      log(st, `🃏 ${p.name} trocou o coringa ${card(back).name} pela carta certa ${c.name}; o coringa voltou para a mão.`);
+      log(st, c.wild ? `🃏 ${p.name} pôs o coringa ${c.name} no lugar de ${card(back).name}, que voltou para a mão.` : `🃏 ${p.name} trocou o coringa ${card(back).name} pela carta certa ${c.name}; o coringa voltou para a mão.`);
       checkObjectives(st, pid);
       return { ok: true };
     }
@@ -696,7 +700,7 @@
       const i = Number(source);
       const id = st.market[i];
       if (!id) return err('Não há corpo nessa posição.');
-      if (!canTakeBody(st, pid, id)) return err('Você só pode pegar o corpo de uma girafa cuja cabeça está na sua mão.');
+      if (!canTakeBody(st, pid, id)) return err('Você só pode pegar este corpo se tiver a cabeça dessa girafa na mão, ou baixada na sua mesa com um corpo coringa.');
       p.hand.push(id);
       st.market[i] = st.bodyDeck.pop() || null;
       ev(st, { t: 'draw', pid, src: 'market', idx: i, card: id });
@@ -734,8 +738,9 @@
     return out.sort((x, y) => (card(y[0]).match === card(y[1]).match) - (card(x[0]).match === card(x[1]).match));
   }
   function canAttack(st, pid) { return st.players[pid].giraffes.length > 0; }
-  // qualquer corpo da vitrine pode ser comprado, mesmo sem a cabeça na mão
-  function canTakeBody(st, pid, bodyId) { return !!bodyId; }
+  // corpo da vitrine: só com a cabeça dessa girafa na mão, ou com ela baixada na sua mesa usando um corpo coringa
+  function canTakeBody(st, pid, bodyId) { return !!bodyId && (hasHeadFor(st, pid, bodyId) || hasWildBodyFor(st, pid, bodyId)); }
+  function hasWildBodyFor(st, pid, bodyId) { const b = card(bodyId); return st.players[pid].giraffes.some(g => !g.special && g.head && g.body && card(g.body).wild && !card(g.head).wild && card(g.head).match === b.match); }
   function hasHeadFor(st, pid, bodyId) { const b = card(bodyId); return st.players[pid].hand.some(h => card(h).kind === 'head' && C.pairs(card(h), b)); }
 
   // quem precisa agir agora
@@ -748,7 +753,7 @@
   }
 
   const API = {
-    CARDS, OBJ, HAND_LIMIT, MAX_NECKS, COLOR_PT, pieceOf, discardPairs, portalPartner, objOptions, chooseObjective, newGame, validate, play, respond, chooseDestiny, chooseStealDest, stealDests, chooseReflect, reflectOptions, hasHeadFor, draw,
+    CARDS, OBJ, HAND_LIMIT, MAX_NECKS, COLOR_PT, pieceOf, discardPairs, portalPartner, objOptions, chooseObjective, newGame, validate, play, respond, chooseDestiny, chooseStealDest, stealDests, chooseReflect, reflectOptions, hasHeadFor, hasWildBodyFor, draw,
     discardExcess, canTakeBody, canAttack, eligibleReactions, whoActs, topPiece, score, canBuild, targetable, biggest, rand,
   };
   root.GD_ENGINE = API;
